@@ -33,13 +33,12 @@ public interface RequestContext extends Context {
   JwtClaims getJwtClaims();
 
   /**
-   * @return A header with the given name (case ignored) if present in the current request, Optional.empty() if not.
+   * @return A header with the given name (case ignored) if present in the current request,
+   *     Optional.empty() if not.
    */
   Optional<HttpHeader> requestHeader(String headerName);
 
-  /**
-   * @return A list with all the headers of the current request
-   */
+  /** @return A list with all the headers of the current request */
   List<HttpHeader> allRequestHeaders();
 
   /** Access to tracing for custom app specific tracing. */
