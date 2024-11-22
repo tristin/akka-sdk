@@ -315,8 +315,8 @@ RedirectMatch 301 ^/docs/akka-persistence-r2dbc/1.2(\.\d+)(/?|/.*)$            h
 # ===================================
 # Akka Projection
 # ===================================
-RedirectMatch 301 ^/docs/akka-distributed-cluster/(\d+\.\d+(\.\d+)?)(/?|/.*)$   https://doc.akka.io/libraries/akka-edge/current$2
-RedirectMatch 301 ^/docs/akka-edge/(\d+\.\d+(\.\d+)?)(/?|/.*)$                  https://doc.akka.io/libraries/akka-distributed-cluster/current$2
+RedirectMatch 301 ^/docs/akka-distributed-cluster/(\d+\.\d+(\.\d+)?)(/?|/.*)$   https://doc.akka.io/libraries/akka-distributed-cluster/current$2
+RedirectMatch 301 ^/docs/akka-edge/(\d+\.\d+(\.\d+)?)(/?|/.*)$                  https://doc.akka.io/libraries/akka-edge/current$2
 
 # versions
 RedirectMatch 301 ^/docs/akka-projection/1.0(\.\d+)?(/?|/.*)$           https://doc.akka.io/libraries/akka-projection/1.0$2
