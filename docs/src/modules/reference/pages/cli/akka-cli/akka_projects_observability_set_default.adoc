@@ -4,7 +4,7 @@ Set the default exporter for your Akka project
 
 == Synopsis
 
-The `akka project observability set default` command sets the default exporter for your Kalix project.
+The `akka project observability set default` command sets the default exporter for your Akka project.
 
 Setting a default exporter will unset all other exporters configured for your project.
 
