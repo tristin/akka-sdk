@@ -7,12 +7,15 @@ package akka.javasdk.impl
 import java.lang.reflect.Constructor
 import java.lang.reflect.InvocationTargetException
 import java.util.concurrent.CompletionStage
+
+import scala.annotation.nowarn
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.jdk.FutureConverters._
 import scala.reflect.ClassTag
 import scala.util.control.NonFatal
+
 import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
@@ -83,14 +86,17 @@ import io.opentelemetry.context.{ Context => OtelContext }
 import kalix.protocol.action.Actions
 import kalix.protocol.discovery.Discovery
 import kalix.protocol.event_sourced_entity.EventSourcedEntities
-import kalix.protocol.replicated_entity.ReplicatedEntities
 import kalix.protocol.value_entity.ValueEntities
 import kalix.protocol.view.Views
 import kalix.protocol.workflow_entity.WorkflowEntities
 import org.slf4j.LoggerFactory
-
 import scala.jdk.OptionConverters.RichOptional
 import scala.jdk.CollectionConverters._
+
+import akka.javasdk.impl.eventsourcedentity.EventSourcedEntityImpl
+import akka.javasdk.impl.timedaction.TimedActionImpl
+import akka.runtime.sdk.spi.EventSourcedEntityDescriptor
+import akka.runtime.sdk.spi.TimedActionDescriptor
 
 /**
  * INTERNAL API
@@ -108,6 +114,7 @@ class SdkRunner private (dependencyProvider: Option[DependencyProvider]) extends
   def applicationConfig: Config =
     ApplicationConfig.loadApplicationConf
 
+  @nowarn("msg=deprecated") //TODO remove deprecation once we remove the old constructor
   override def getSettings: SpiSettings = {
     val applicationConf = applicationConfig
     val devModeSettings =
@@ -342,11 +349,52 @@ private final class Sdk(
   }
 
   // collect all Endpoints and compose them to build a larger router
-  private val httpEndpoints = componentClasses
+  private val httpEndpointDescriptors = componentClasses
     .filter(Reflect.isRestEndpoint)
     .map { httpEndpointClass =>
       HttpEndpointDescriptorFactory(httpEndpointClass, httpEndpointFactory(httpEndpointClass))
     }
+
+  private val eventSourcedEntityDescriptors =
+    componentClasses
+      .filter(hasComponentId)
+      .collect {
+        case clz if classOf[EventSourcedEntity[_, _]].isAssignableFrom(clz) =>
+          val componentId = clz.getAnnotation(classOf[ComponentId]).value
+          val entitySpi =
+            new EventSourcedEntityImpl[AnyRef, AnyRef, EventSourcedEntity[AnyRef, AnyRef]](
+              sdkSettings,
+              sdkTracerFactory,
+              componentId,
+              clz,
+              messageCodec,
+              context =>
+                wiredInstance(clz.asInstanceOf[Class[EventSourcedEntity[AnyRef, AnyRef]]]) {
+                  // remember to update component type API doc and docs if changing the set of injectables
+                  case p if p == classOf[EventSourcedEntityContext] => context
+                },
+              sdkSettings.snapshotEvery)
+          new EventSourcedEntityDescriptor(componentId, entitySpi)
+      }
+
+  private val timedActionDescriptors =
+    componentClasses
+      .filter(hasComponentId)
+      .collect {
+        case clz if classOf[TimedAction].isAssignableFrom(clz) =>
+          val componentId = clz.getAnnotation(classOf[ComponentId]).value
+          val timedActionClass = clz.asInstanceOf[Class[TimedAction]]
+          val timedActionSpi =
+            new TimedActionImpl[TimedAction](
+              () => wiredInstance(timedActionClass)(sideEffectingComponentInjects(None)),
+              timedActionClass,
+              system.classicSystem,
+              runtimeComponentClients.timerClient,
+              sdkExecutionContext,
+              sdkTracerFactory,
+              messageCodec)
+          new TimedActionDescriptor(componentId, timedActionSpi)
+      }
 
   // these are available for injecting in all kinds of component that are primarily
   // for side effects
@@ -375,7 +423,8 @@ private final class Sdk(
     }
 
     val actionAndConsumerServices = services.filter { case (_, service) =>
-      service.getClass == classOf[TimedActionService[_]] || service.getClass == classOf[ConsumerService[_]]
+      /*FIXME service.getClass == classOf[TimedActionService[_]] ||*/
+      service.getClass == classOf[ConsumerService[_]]
     }
 
     if (actionAndConsumerServices.nonEmpty) {
@@ -484,11 +533,16 @@ private final class Sdk(
       override def discovery: Discovery = discoveryEndpoint
       override def actions: Option[Actions] = actionsEndpoint
       override def eventSourcedEntities: Option[EventSourcedEntities] = eventSourcedEntitiesEndpoint
+      override def eventSourcedEntityDescriptors: Seq[EventSourcedEntityDescriptor] =
+        Sdk.this.eventSourcedEntityDescriptors
       override def valueEntities: Option[ValueEntities] = valueEntitiesEndpoint
       override def views: Option[Views] = viewsEndpoint
       override def workflowEntities: Option[WorkflowEntities] = workflowEntitiesEndpoint
-      override def replicatedEntities: Option[ReplicatedEntities] = None
-      override def httpEndpointDescriptors: Seq[HttpEndpointDescriptor] = httpEndpoints
+      override def httpEndpointDescriptors: Seq[HttpEndpointDescriptor] =
+        Sdk.this.httpEndpointDescriptors
+
+      override def timedActionsDescriptors: Seq[TimedActionDescriptor] =
+        Sdk.this.timedActionDescriptors
     }
   }
 
