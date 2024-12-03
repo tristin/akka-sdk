@@ -96,6 +96,7 @@ import scala.jdk.CollectionConverters._
 
 import akka.javasdk.impl.eventsourcedentity.EventSourcedEntityImpl
 import akka.javasdk.impl.timedaction.TimedActionImpl
+import akka.runtime.sdk.spi.ConsumerDescriptor
 import akka.runtime.sdk.spi.EventSourcedEntityDescriptor
 import akka.runtime.sdk.spi.SpiEventSourcedEntity
 import akka.runtime.sdk.spi.TimedActionDescriptor
@@ -399,6 +400,9 @@ private final class Sdk(
           new EventSourcedEntityDescriptor(componentId, readOnlyCommandNames, instanceFactory)
       }
 
+  // FIXME
+  private val consumerDescriptors = Seq.empty[ConsumerDescriptor]
+
   private val timedActionDescriptors =
     componentClasses
       .filter(hasComponentId)
@@ -408,6 +412,7 @@ private final class Sdk(
           val timedActionClass = clz.asInstanceOf[Class[TimedAction]]
           val timedActionSpi =
             new TimedActionImpl[TimedAction](
+              componentId,
               () => wiredInstance(timedActionClass)(sideEffectingComponentInjects(None)),
               timedActionClass,
               system.classicSystem,
@@ -553,7 +558,6 @@ private final class Sdk(
       }
 
       override def discovery: Discovery = discoveryEndpoint
-      override def actions: Option[Actions] = actionsEndpoint
       override def eventSourcedEntities: Option[EventSourcedEntities] = eventSourcedEntitiesEndpoint
       override def eventSourcedEntityDescriptors: Seq[EventSourcedEntityDescriptor] =
         Sdk.this.eventSourcedEntityDescriptors
@@ -565,6 +569,9 @@ private final class Sdk(
 
       override def timedActionsDescriptors: Seq[TimedActionDescriptor] =
         Sdk.this.timedActionDescriptors
+
+      override def consumersDescriptors: Seq[ConsumerDescriptor] =
+        Sdk.this.consumerDescriptors
     }
   }
 

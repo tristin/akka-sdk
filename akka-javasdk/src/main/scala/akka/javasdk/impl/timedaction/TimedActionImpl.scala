@@ -37,6 +37,7 @@ import org.slf4j.MDC
 /** EndMarker */
 @InternalApi
 private[impl] final class TimedActionImpl[TA <: TimedAction](
+    componentId: String,
     val factory: () => TA,
     timedActionClass: Class[TA],
     _system: ActorSystem,
@@ -113,9 +114,7 @@ private[impl] final class TimedActionImpl[TA <: TimedAction](
     ex match {
       case _ =>
         ErrorHandling.withCorrelationId { correlationId =>
-          log.error(
-            s"Failure during handling command [${command.name}] from TimedAction component [${command.componentId}].",
-            ex)
+          log.error(s"Failure during handling command [${command.name}] from TimedAction component [$componentId].", ex)
           protocolFailure(correlationId)
         }
     }
