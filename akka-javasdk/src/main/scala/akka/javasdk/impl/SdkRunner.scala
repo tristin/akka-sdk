@@ -6,6 +6,7 @@ package akka.javasdk.impl
 
 import java.lang.reflect.Constructor
 import java.lang.reflect.InvocationTargetException
+import java.lang.reflect.Method
 import java.util.concurrent.CompletionStage
 
 import scala.annotation.nowarn
@@ -356,12 +357,30 @@ private final class Sdk(
       HttpEndpointDescriptorFactory(httpEndpointClass, httpEndpointFactory(httpEndpointClass))
     }
 
+  // command handlers candidate must have 0 or 1 parameter and return the components effect type
+  // we might later revisit this, instead of single param, we can require (State, Cmd) => Effect like in Akka
+  def isCommandHandlerCandidate[E](method: Method)(implicit effectType: ClassTag[E]): Boolean = {
+    effectType.runtimeClass.isAssignableFrom(method.getReturnType) &&
+    method.getParameterTypes.length <= 1 &&
+    // Workflow will have lambdas returning Effect, we want to filter them out
+    !method.getName.startsWith("lambda$")
+  }
+
   private val eventSourcedEntityDescriptors =
     componentClasses
       .filter(hasComponentId)
       .collect {
         case clz if classOf[EventSourcedEntity[_, _]].isAssignableFrom(clz) =>
           val componentId = clz.getAnnotation(classOf[ComponentId]).value
+
+          val readOnlyCommandNames =
+            clz.getDeclaredMethods.collect {
+              case method
+                  if isCommandHandlerCandidate[EventSourcedEntity.Effect[_]](method) && method.getReturnType == classOf[
+                    EventSourcedEntity.ReadOnlyEffect[_]] =>
+                method.getName
+            }.toSet
+
           val instanceFactory: SpiEventSourcedEntity.FactoryContext => SpiEventSourcedEntity = { factoryContext =>
             new EventSourcedEntityImpl[AnyRef, AnyRef, EventSourcedEntity[AnyRef, AnyRef]](
               sdkSettings,
@@ -377,7 +396,7 @@ private final class Sdk(
                 },
               sdkSettings.snapshotEvery)
           }
-          new EventSourcedEntityDescriptor(componentId, instanceFactory)
+          new EventSourcedEntityDescriptor(componentId, readOnlyCommandNames, instanceFactory)
       }
 
   private val timedActionDescriptors =

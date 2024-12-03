@@ -37,11 +37,8 @@ import akka.javasdk.impl.telemetry.SpanTracingImpl
 import akka.javasdk.impl.telemetry.Telemetry
 import akka.runtime.sdk.spi.SpiEntity
 import akka.runtime.sdk.spi.SpiEventSourcedEntity
-import akka.runtime.sdk.spi.SpiSerialization
-import akka.runtime.sdk.spi.SpiSerialization.Deserialized
 import com.google.protobuf.ByteString
 import com.google.protobuf.any.{ Any => ScalaPbAny }
-import io.grpc.Status
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.api.trace.Tracer
 import org.slf4j.LoggerFactory
@@ -151,9 +148,8 @@ private[impl] final class EventSourcedEntityImpl[S, E, ES <: EventSourcedEntity[
 
       def replyOrError(updatedState: SpiEventSourcedEntity.State): (Option[ScalaPbAny], Option[SpiEntity.Error]) = {
         commandEffect.secondaryEffect(updatedState) match {
-          case ErrorReplyImpl(description, status) =>
-            val errorCode = status.map(_.value).getOrElse(Status.Code.UNKNOWN.value)
-            (None, Some(new SpiEntity.Error(description, errorCode)))
+          case ErrorReplyImpl(description) =>
+            (None, Some(new SpiEntity.Error(description)))
           case MessageReplyImpl(message, _) =>
             // FIXME metadata?
             // FIXME is this encoding correct?
@@ -199,7 +195,7 @@ private[impl] final class EventSourcedEntityImpl[S, E, ES <: EventSourcedEntity[
               events.map(event => ScalaPbAny.fromJavaProto(messageCodec.encodeJava(event))).toVector
 
             Future.successful(
-              new SpiEventSourcedEntity.Effect(events = serializedEvents, updatedState = state, reply, error, delete))
+              new SpiEventSourcedEntity.Effect(events = serializedEvents, updatedState, reply, error, delete))
           }
 
         case NoPrimaryEffect =>
@@ -222,7 +218,7 @@ private[impl] final class EventSourcedEntityImpl[S, E, ES <: EventSourcedEntity[
             events = Vector.empty,
             updatedState = state,
             reply = None,
-            error = Some(new SpiEntity.Error(msg, Status.Code.INVALID_ARGUMENT.value)),
+            error = Some(new SpiEntity.Error(msg)),
             delete = None))
       case e: EntityException =>
         throw e
@@ -273,13 +269,9 @@ private[impl] final class EventSourcedEntityImpl[S, E, ES <: EventSourcedEntity[
     }
   }
 
-  override val stateSerializer: SpiSerialization.Serializer =
-    new SpiSerialization.Serializer {
+  override def stateToProto(obj: SpiEventSourcedEntity.State): ScalaPbAny =
+    ScalaPbAny.fromJavaProto(messageCodec.encodeJava(obj))
 
-      override def toProto(obj: Deserialized): ScalaPbAny =
-        ScalaPbAny.fromJavaProto(messageCodec.encodeJava(obj))
-
-      override def fromProto(pb: ScalaPbAny): Deserialized =
-        messageCodec.decodeMessage(pb).asInstanceOf[Deserialized]
-    }
+  override def stateFromProto(pb: ScalaPbAny): SpiEventSourcedEntity.State =
+    messageCodec.decodeMessage(pb).asInstanceOf[SpiEventSourcedEntity.State]
 }

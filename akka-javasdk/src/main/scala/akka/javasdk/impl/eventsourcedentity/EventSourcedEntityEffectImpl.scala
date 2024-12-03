@@ -19,7 +19,6 @@ import akka.javasdk.eventsourcedentity.EventSourcedEntity.Effect
 import akka.javasdk.eventsourcedentity.EventSourcedEntity.Effect.Builder
 import akka.javasdk.eventsourcedentity.EventSourcedEntity.Effect.OnSuccessBuilder
 import akka.javasdk.eventsourcedentity.EventSourcedEntity.ReadOnlyEffect
-import io.grpc.Status
 
 /**
  * INTERNAL API
@@ -93,7 +92,7 @@ private[javasdk] class EventSourcedEntityEffectImpl[S, E]
   }
 
   override def error[T](description: String): EventSourcedEntityEffectImpl[T, E] = {
-    _secondaryEffect = ErrorReplyImpl(description, Some(Status.Code.INVALID_ARGUMENT))
+    _secondaryEffect = ErrorReplyImpl(description)
     this.asInstanceOf[EventSourcedEntityEffectImpl[T, E]]
   }
 

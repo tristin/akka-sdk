@@ -192,13 +192,10 @@ private[impl] final class KeyValueEntitiesImpl(
             }
 
             val clientAction =
-              serializedSecondaryEffect.replyToClientAction(
-                command.id,
-                errorCode // error code from BadRequest
-              )
+              serializedSecondaryEffect.replyToClientAction(command.id)
 
             serializedSecondaryEffect match {
-              case _: ErrorReplyImpl[_] =>
+              case _: ErrorReplyImpl =>
                 ValueEntityStreamOut(OutReply(ValueEntityReply(commandId = command.id, clientAction = clientAction)))
 
               case _ => // non-error

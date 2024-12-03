@@ -11,7 +11,6 @@ import akka.stream.scaladsl.Flow
 import akka.stream.scaladsl.Source
 import com.google.protobuf.ByteString
 import com.google.protobuf.any.{ Any => ScalaPbAny }
-import io.grpc.Status
 import akka.javasdk.impl.ErrorHandling.BadRequestException
 import EventSourcedEntityRouter.CommandResult
 import akka.annotation.InternalApi
@@ -206,7 +205,7 @@ private[impl] final class EventSourcedEntitiesImpl(
                   seqNr => new EventContextImpl(thisEntityId, seqNr))
               } catch {
                 case BadRequestException(msg) =>
-                  val errorReply = ErrorReplyImpl(msg, Some(Status.Code.INVALID_ARGUMENT))
+                  val errorReply = ErrorReplyImpl(msg)
                   CommandResult(Vector.empty, errorReply, None, context.sequenceNumber, false)
                 case e: EntityException =>
                   throw e
@@ -222,13 +221,10 @@ private[impl] final class EventSourcedEntitiesImpl(
               case other => other
             }
 
-            val clientAction = serializedSecondaryEffect.replyToClientAction(
-              command.id,
-              None // None because we can use the one inside the SecondaryEffect
-            )
+            val clientAction = serializedSecondaryEffect.replyToClientAction(command.id)
 
             serializedSecondaryEffect match {
-              case _: ErrorReplyImpl[_] => // error
+              case _: ErrorReplyImpl => // error
                 (
                   endSequenceNumber,
                   Some(OutReply(EventSourcedReply(commandId = command.id, clientAction = clientAction))))
