@@ -37,11 +37,8 @@ import akka.javasdk.impl.telemetry.SpanTracingImpl
 import akka.javasdk.impl.telemetry.Telemetry
 import akka.runtime.sdk.spi.SpiEntity
 import akka.runtime.sdk.spi.SpiEventSourcedEntity
-import akka.runtime.sdk.spi.SpiSerialization
-import akka.runtime.sdk.spi.SpiSerialization.Deserialized
 import com.google.protobuf.ByteString
 import com.google.protobuf.any.{ Any => ScalaPbAny }
-import io.grpc.Status
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.api.trace.Tracer
 import org.slf4j.LoggerFactory
@@ -87,6 +84,7 @@ private[impl] final class EventSourcedEntityImpl[S, E, ES <: EventSourcedEntity[
     tracerFactory: () => Tracer,
     componentId: String,
     componentClass: Class[_],
+    entityId: String,
     messageCodec: JsonMessageCodec,
     factory: EventSourcedEntityContext => ES,
     snapshotEvery: Int)
@@ -102,29 +100,24 @@ private[impl] final class EventSourcedEntityImpl[S, E, ES <: EventSourcedEntity[
   private val componentDescriptor = ComponentDescriptor.descriptorFor(componentClass, messageCodec)
 
   // FIXME remove EventSourcedEntityRouter altogether, and only keep stateless ReflectiveEventSourcedEntityRouter
-  private def createRouter(context: EventSourcedEntityContext)
-      : ReflectiveEventSourcedEntityRouter[AnyRef, AnyRef, EventSourcedEntity[AnyRef, AnyRef]] =
+  private val router: ReflectiveEventSourcedEntityRouter[AnyRef, AnyRef, EventSourcedEntity[AnyRef, AnyRef]] = {
+    val context = new EventSourcedEntityContextImpl(entityId)
     new ReflectiveEventSourcedEntityRouter[S, E, ES](
       factory(context),
       componentDescriptor.commandHandlers,
       messageCodec)
       .asInstanceOf[ReflectiveEventSourcedEntityRouter[AnyRef, AnyRef, EventSourcedEntity[AnyRef, AnyRef]]]
-
-  override def emptyState: SpiEventSourcedEntity.State = {
-    // FIXME rather messy with the contexts here
-    val context = new EventSourcedEntityContextImpl("FIXME_ID")
-    val router = createRouter(context)
-    try {
-      router.entity.emptyState()
-    } finally {
-      router.entity._internalSetCommandContext(Optional.empty())
-    }
   }
+
+  private def entity: EventSourcedEntity[AnyRef, AnyRef] =
+    router.entity
+
+  override def emptyState: SpiEventSourcedEntity.State =
+    entity.emptyState()
 
   override def handleCommand(
       state: SpiEventSourcedEntity.State,
       command: SpiEntity.Command): Future[SpiEventSourcedEntity.Effect] = {
-    val entityId = command.entityId
 
     val span: Option[Span] = None // FIXME traceInstrumentation.buildSpan(service, command)
     span.foreach(s => MDC.put(Telemetry.TRACE_ID, s.getSpanContext.getTraceId))
@@ -146,20 +139,17 @@ private[impl] final class EventSourcedEntityImpl[S, E, ES <: EventSourcedEntity[
         span,
         tracerFactory)
 
-    val context = new EventSourcedEntityContextImpl(entityId)
-    val router = createRouter(context)
-    router.entity._internalSetCommandContext(Optional.of(cmdContext))
+    entity._internalSetCommandContext(Optional.of(cmdContext))
     try {
-      router.entity._internalSetCurrentState(state)
+      entity._internalSetCurrentState(state)
       val commandEffect = router
         .handleCommand(command.name, state, cmd, cmdContext)
         .asInstanceOf[EventSourcedEntityEffectImpl[AnyRef, E]] // FIXME improve?
 
       def replyOrError(updatedState: SpiEventSourcedEntity.State): (Option[ScalaPbAny], Option[SpiEntity.Error]) = {
         commandEffect.secondaryEffect(updatedState) match {
-          case ErrorReplyImpl(description, status) =>
-            val errorCode = status.map(_.value).getOrElse(Status.Code.UNKNOWN.value)
-            (None, Some(new SpiEntity.Error(description, errorCode)))
+          case ErrorReplyImpl(description) =>
+            (None, Some(new SpiEntity.Error(description)))
           case MessageReplyImpl(message, _) =>
             // FIXME metadata?
             // FIXME is this encoding correct?
@@ -205,7 +195,7 @@ private[impl] final class EventSourcedEntityImpl[S, E, ES <: EventSourcedEntity[
               events.map(event => ScalaPbAny.fromJavaProto(messageCodec.encodeJava(event))).toVector
 
             Future.successful(
-              new SpiEventSourcedEntity.Effect(events = serializedEvents, updatedState = state, reply, error, delete))
+              new SpiEventSourcedEntity.Effect(events = serializedEvents, updatedState, reply, error, delete))
           }
 
         case NoPrimaryEffect =>
@@ -221,14 +211,14 @@ private[impl] final class EventSourcedEntityImpl[S, E, ES <: EventSourcedEntity[
           entityId,
           0, // FIXME remove commandId
           command.name,
-          s"No command handler found for command [$name] on ${router.entity.getClass}")
+          s"No command handler found for command [$name] on ${entity.getClass}")
       case BadRequestException(msg) =>
         Future.successful(
           new SpiEventSourcedEntity.Effect(
             events = Vector.empty,
             updatedState = state,
             reply = None,
-            error = Some(new SpiEntity.Error(msg, Status.Code.INVALID_ARGUMENT.value)),
+            error = Some(new SpiEntity.Error(msg)),
             delete = None))
       case e: EntityException =>
         throw e
@@ -240,8 +230,8 @@ private[impl] final class EventSourcedEntityImpl[S, E, ES <: EventSourcedEntity[
           s"Unexpected failure: $error",
           Some(error))
     } finally {
-      router.entity._internalSetCommandContext(Optional.empty())
-      router.entity._internalClearCurrentState()
+      entity._internalSetCommandContext(Optional.empty())
+      entity._internalClearCurrentState()
       cmdContext.deactivate() // Very important!
 
       span.foreach { s =>
@@ -259,7 +249,7 @@ private[impl] final class EventSourcedEntityImpl[S, E, ES <: EventSourcedEntity[
       messageCodec
         .decodeMessage(eventEnv.payload)
         .asInstanceOf[AnyRef] // FIXME empty?
-    entityHandleEvent(state, event, eventEnv.entityId, eventEnv.sequenceNumber)
+    entityHandleEvent(state, event, entityId, eventEnv.sequenceNumber)
   }
 
   def entityHandleEvent(
@@ -268,25 +258,20 @@ private[impl] final class EventSourcedEntityImpl[S, E, ES <: EventSourcedEntity[
       entityId: String,
       sequenceNumber: Long): SpiEventSourcedEntity.State = {
     val eventContext = new EventContextImpl(entityId, sequenceNumber)
-    val router = createRouter(eventContext) // FIXME reuse router instance?
-    router.entity._internalSetEventContext(Optional.of(eventContext))
+    entity._internalSetEventContext(Optional.of(eventContext))
     try {
       router.handleEvent(state, event)
     } catch {
       case EventHandlerNotFound(eventClass) =>
-        throw new IllegalArgumentException(s"Unknown event type [$eventClass] on ${router.entity.getClass}")
+        throw new IllegalArgumentException(s"Unknown event type [$eventClass] on ${entity.getClass}")
     } finally {
-      router.entity._internalSetEventContext(Optional.empty())
+      entity._internalSetEventContext(Optional.empty())
     }
   }
 
-  override val stateSerializer: SpiSerialization.Serializer =
-    new SpiSerialization.Serializer {
+  override def stateToProto(obj: SpiEventSourcedEntity.State): ScalaPbAny =
+    ScalaPbAny.fromJavaProto(messageCodec.encodeJava(obj))
 
-      override def toProto(obj: Deserialized): ScalaPbAny =
-        ScalaPbAny.fromJavaProto(messageCodec.encodeJava(obj))
-
-      override def fromProto(pb: ScalaPbAny): Deserialized =
-        messageCodec.decodeMessage(pb).asInstanceOf[Deserialized]
-    }
+  override def stateFromProto(pb: ScalaPbAny): SpiEventSourcedEntity.State =
+    messageCodec.decodeMessage(pb).asInstanceOf[SpiEventSourcedEntity.State]
 }

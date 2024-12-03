@@ -59,7 +59,7 @@ private[akka] final class EventSourcedResultImpl[R, S, E](
 
   private def secondaryEffectName: String = secondaryEffect match {
     case _: MessageReplyImpl[_] => "reply"
-    case _: ErrorReplyImpl[_]   => "error"
+    case _: ErrorReplyImpl      => "error"
     case NoSecondaryEffectImpl  => "no effect" // this should never happen
   }
 
@@ -73,16 +73,16 @@ private[akka] final class EventSourcedResultImpl[R, S, E](
     case _ => throw new IllegalStateException(s"The effect was not a reply but [$secondaryEffectName]")
   }
 
-  override def isError: Boolean = secondaryEffect.isInstanceOf[ErrorReplyImpl[_]]
+  override def isError: Boolean = secondaryEffect.isInstanceOf[ErrorReplyImpl]
 
   override def getError: String = secondaryEffect match {
-    case ErrorReplyImpl(description, _) => description
+    case ErrorReplyImpl(description) => description
     case _ => throw new IllegalStateException(s"The effect was not an error but [$secondaryEffectName]")
   }
 
   override def getErrorStatusCode: Status.Code = secondaryEffect match {
-    case ErrorReplyImpl(_, status) => status.getOrElse(Status.Code.UNKNOWN)
-    case _ => throw new IllegalStateException(s"The effect was not an error but [$secondaryEffectName]")
+    case ErrorReplyImpl(_) => Status.Code.INVALID_ARGUMENT
+    case _                 => throw new IllegalStateException(s"The effect was not an error but [$secondaryEffectName]")
   }
 
   override def getUpdatedState: AnyRef = state.asInstanceOf[AnyRef]

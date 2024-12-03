@@ -10,7 +10,6 @@ import scala.util.control.NonFatal
 
 import akka.actor.ActorSystem
 import akka.annotation.InternalApi
-import akka.javasdk.Metadata
 import akka.javasdk.impl.ComponentDescriptor
 import akka.javasdk.impl.ErrorHandling
 import akka.javasdk.impl.JsonMessageCodec
@@ -63,14 +62,12 @@ private[impl] final class TimedActionImpl[TA <: TimedAction](
     span.foreach(s => MDC.put(Telemetry.TRACE_ID, s.getSpanContext.getTraceId))
     val fut =
       try {
-        val messageContext =
-          createMessageContext(command, messageCodec, span)
+        val commandContext =
+          createCommandContext(command, messageCodec, span)
         val decodedPayload = messageCodec.decodeMessage(
           command.payload.getOrElse(throw new IllegalArgumentException("No command payload")))
-        val metadata: Metadata =
-          MetadataImpl.of(Nil) // FIXME MetadataImpl.of(command.metadata.map(_.entries.toVector).getOrElse(Nil))
         val effect = createRouter()
-          .handleUnary(command.name, CommandEnvelope.of(decodedPayload, metadata), messageContext)
+          .handleUnary(command.name, CommandEnvelope.of(decodedPayload, commandContext.metadata()), commandContext)
         toSpiEffect(command, effect)
       } catch {
         case NonFatal(ex) =>
@@ -85,11 +82,10 @@ private[impl] final class TimedActionImpl[TA <: TimedAction](
     }
   }
 
-  private def createMessageContext(command: Command, messageCodec: MessageCodec, span: Option[Span]): CommandContext = {
-    val metadata: MetadataImpl =
-      MetadataImpl.of(Nil) // FIXME MetadataImpl.of(command.metadata.map(_.entries.toVector).getOrElse(Nil))
+  private def createCommandContext(command: Command, messageCodec: MessageCodec, span: Option[Span]): CommandContext = {
+    val metadata = MetadataImpl.of(command.metadata)
     val updatedMetadata = span.map(metadata.withTracing).getOrElse(metadata)
-    new CommandContextImpl(updatedMetadata, messageCodec, system, timerClient, tracerFactory, span)
+    new CommandContextImpl(updatedMetadata, messageCodec, timerClient, tracerFactory, span)
   }
 
   private def toSpiEffect(command: Command, effect: TimedAction.Effect): Future[Effect] = {
@@ -114,7 +110,7 @@ private[impl] final class TimedActionImpl[TA <: TimedAction](
       case _ =>
         ErrorHandling.withCorrelationId { correlationId =>
           log.error(
-            s"Failure during handling command [${command.name}] from TimedAction component [${command.componentId}].",
+            s"Failure during handling command [${command.name}] from TimedAction component [${timedActionClass.getSimpleName}].",
             ex)
           protocolFailure(correlationId)
         }

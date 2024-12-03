@@ -231,7 +231,7 @@ private[akka] final class ActionsImpl(
       serviceName: String): CommandContext = {
     val metadata = MetadataImpl.of(in.metadata.map(_.entries.toVector).getOrElse(Nil))
     val updatedMetadata = span.map(metadata.withTracing).getOrElse(metadata)
-    new CommandContextImpl(updatedMetadata, messageCodec, system, timerClient, tracerFactory, span)
+    new CommandContextImpl(updatedMetadata, messageCodec, timerClient, tracerFactory, span)
   }
 
   private def createConsumerMessageContext(
@@ -265,7 +265,6 @@ case class CommandEnvelopeImpl[T](payload: T, metadata: Metadata) extends Comman
 class CommandContextImpl(
     override val metadata: Metadata,
     val messageCodec: MessageCodec,
-    val system: ActorSystem,
     timerClient: TimerClient,
     tracerFactory: () => Tracer,
     span: Option[Span])

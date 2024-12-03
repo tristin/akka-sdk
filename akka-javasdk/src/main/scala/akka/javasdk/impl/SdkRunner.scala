@@ -6,6 +6,7 @@ package akka.javasdk.impl
 
 import java.lang.reflect.Constructor
 import java.lang.reflect.InvocationTargetException
+import java.lang.reflect.Method
 import java.util.concurrent.CompletionStage
 
 import scala.annotation.nowarn
@@ -37,7 +38,6 @@ import akka.javasdk.impl.Sdk.StartupContext
 import akka.javasdk.impl.Validations.Invalid
 import akka.javasdk.impl.Validations.Valid
 import akka.javasdk.impl.Validations.Validation
-import akka.javasdk.impl.action.ActionsImpl
 import akka.javasdk.impl.client.ComponentClientImpl
 import akka.javasdk.impl.consumer.ConsumerService
 import akka.javasdk.impl.eventsourcedentity.EventSourcedEntitiesImpl
@@ -83,7 +83,6 @@ import com.typesafe.config.ConfigFactory
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.api.trace.Tracer
 import io.opentelemetry.context.{ Context => OtelContext }
-import kalix.protocol.action.Actions
 import kalix.protocol.discovery.Discovery
 import kalix.protocol.event_sourced_entity.EventSourcedEntities
 import kalix.protocol.value_entity.ValueEntities
@@ -93,9 +92,12 @@ import org.slf4j.LoggerFactory
 import scala.jdk.OptionConverters.RichOptional
 import scala.jdk.CollectionConverters._
 
+import akka.javasdk.impl.consumer.ConsumerImpl
 import akka.javasdk.impl.eventsourcedentity.EventSourcedEntityImpl
 import akka.javasdk.impl.timedaction.TimedActionImpl
+import akka.runtime.sdk.spi.ConsumerDescriptor
 import akka.runtime.sdk.spi.EventSourcedEntityDescriptor
+import akka.runtime.sdk.spi.SpiEventSourcedEntity
 import akka.runtime.sdk.spi.TimedActionDescriptor
 
 /**
@@ -355,18 +357,37 @@ private final class Sdk(
       HttpEndpointDescriptorFactory(httpEndpointClass, httpEndpointFactory(httpEndpointClass))
     }
 
+  // command handlers candidate must have 0 or 1 parameter and return the components effect type
+  // we might later revisit this, instead of single param, we can require (State, Cmd) => Effect like in Akka
+  def isCommandHandlerCandidate[E](method: Method)(implicit effectType: ClassTag[E]): Boolean = {
+    effectType.runtimeClass.isAssignableFrom(method.getReturnType) &&
+    method.getParameterTypes.length <= 1 &&
+    // Workflow will have lambdas returning Effect, we want to filter them out
+    !method.getName.startsWith("lambda$")
+  }
+
   private val eventSourcedEntityDescriptors =
     componentClasses
       .filter(hasComponentId)
       .collect {
         case clz if classOf[EventSourcedEntity[_, _]].isAssignableFrom(clz) =>
           val componentId = clz.getAnnotation(classOf[ComponentId]).value
-          val entitySpi =
+
+          val readOnlyCommandNames =
+            clz.getDeclaredMethods.collect {
+              case method
+                  if isCommandHandlerCandidate[EventSourcedEntity.Effect[_]](method) && method.getReturnType == classOf[
+                    EventSourcedEntity.ReadOnlyEffect[_]] =>
+                method.getName
+            }.toSet
+
+          val instanceFactory: SpiEventSourcedEntity.FactoryContext => SpiEventSourcedEntity = { factoryContext =>
             new EventSourcedEntityImpl[AnyRef, AnyRef, EventSourcedEntity[AnyRef, AnyRef]](
               sdkSettings,
               sdkTracerFactory,
               componentId,
               clz,
+              factoryContext.entityId,
               messageCodec,
               context =>
                 wiredInstance(clz.asInstanceOf[Class[EventSourcedEntity[AnyRef, AnyRef]]]) {
@@ -374,7 +395,8 @@ private final class Sdk(
                   case p if p == classOf[EventSourcedEntityContext] => context
                 },
               sdkSettings.snapshotEvery)
-          new EventSourcedEntityDescriptor(componentId, entitySpi)
+          }
+          new EventSourcedEntityDescriptor(componentId, readOnlyCommandNames, instanceFactory)
       }
 
   private val timedActionDescriptors =
@@ -396,6 +418,26 @@ private final class Sdk(
           new TimedActionDescriptor(componentId, timedActionSpi)
       }
 
+  private val consumerDescriptors =
+    componentClasses
+      .filter(hasComponentId)
+      .collect {
+        case clz if classOf[Consumer].isAssignableFrom(clz) =>
+          val componentId = clz.getAnnotation(classOf[ComponentId]).value
+          val consumerClass = clz.asInstanceOf[Class[Consumer]]
+          val timedActionSpi =
+            new ConsumerImpl[Consumer](
+              () => wiredInstance(consumerClass)(sideEffectingComponentInjects(None)),
+              consumerClass,
+              system.classicSystem,
+              runtimeComponentClients.timerClient,
+              sdkExecutionContext,
+              sdkTracerFactory,
+              messageCodec,
+              ComponentDescriptorFactory.findIgnore(consumerClass))
+          new ConsumerDescriptor(componentId, timedActionSpi)
+      }
+
   // these are available for injecting in all kinds of component that are primarily
   // for side effects
   // Note: config is also always available through the combination with user DI way down below
@@ -410,7 +452,6 @@ private final class Sdk(
   // FIXME mixing runtime config with sdk with user project config is tricky
   def spiEndpoints: SpiComponents = {
 
-    var actionsEndpoint: Option[Actions] = None
     var eventSourcedEntitiesEndpoint: Option[EventSourcedEntities] = None
     var valueEntitiesEndpoint: Option[ValueEntities] = None
     var viewsEndpoint: Option[Views] = None
@@ -420,21 +461,6 @@ private final class Sdk(
 
     val services = componentFactories.map { case (serviceDescriptor, service) =>
       serviceDescriptor.getFullName -> service
-    }
-
-    val actionAndConsumerServices = services.filter { case (_, service) =>
-      /*FIXME service.getClass == classOf[TimedActionService[_]] ||*/
-      service.getClass == classOf[ConsumerService[_]]
-    }
-
-    if (actionAndConsumerServices.nonEmpty) {
-      actionsEndpoint = Some(
-        new ActionsImpl(
-          classicSystem,
-          actionAndConsumerServices,
-          runtimeComponentClients.timerClient,
-          sdkExecutionContext,
-          sdkTracerFactory))
     }
 
     services.groupBy(_._2.getClass).foreach {
@@ -531,7 +557,6 @@ private final class Sdk(
       }
 
       override def discovery: Discovery = discoveryEndpoint
-      override def actions: Option[Actions] = actionsEndpoint
       override def eventSourcedEntities: Option[EventSourcedEntities] = eventSourcedEntitiesEndpoint
       override def eventSourcedEntityDescriptors: Seq[EventSourcedEntityDescriptor] =
         Sdk.this.eventSourcedEntityDescriptors
@@ -543,6 +568,9 @@ private final class Sdk(
 
       override def timedActionsDescriptors: Seq[TimedActionDescriptor] =
         Sdk.this.timedActionDescriptors
+
+      override def consumersDescriptors: Seq[ConsumerDescriptor] =
+        Sdk.this.consumerDescriptors
     }
   }
 
