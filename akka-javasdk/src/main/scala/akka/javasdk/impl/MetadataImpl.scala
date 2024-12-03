@@ -20,6 +20,8 @@ import akka.javasdk.CloudEvent
 import akka.javasdk.Metadata
 import akka.javasdk.impl.telemetry.Telemetry
 import akka.javasdk.impl.telemetry.Telemetry.metadataGetter
+import akka.runtime.sdk.spi.SpiMetadata
+import akka.runtime.sdk.spi.SpiMetadataEntry
 import com.google.protobuf.ByteString
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.api.trace.SpanContext
@@ -27,6 +29,7 @@ import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator
 import io.opentelemetry.context.{ Context => OtelContext }
 import kalix.protocol.component
 import kalix.protocol.component.MetadataEntry
+import kalix.protocol.component.MetadataEntry.Value
 
 /**
  * INTERNAL API
@@ -259,6 +262,24 @@ object MetadataImpl {
         throw new RuntimeException(s"Unknown metadata implementation: ${other.getClass}, cannot send")
     }
 
+  def toSpi(metadata: Option[Metadata]): SpiMetadata = {
+    metadata match {
+      case Some(impl: MetadataImpl) if impl.entries.nonEmpty =>
+        val entries = impl.entries.map(entry =>
+          entry.value match {
+            case Value.Empty              => new SpiMetadataEntry(entry.key, "")
+            case Value.StringValue(value) => new SpiMetadataEntry(entry.key, value)
+            case Value.BytesValue(value) =>
+              new SpiMetadataEntry(entry.key, value.toStringUtf8) //FIXME support bytes values or not
+          })
+        new SpiMetadata(entries)
+      case Some(_: MetadataImpl) => SpiMetadata.Empty
+      case None                  => SpiMetadata.Empty
+      case other =>
+        throw new RuntimeException(s"Unknown metadata implementation: ${other.getClass}, cannot send")
+    }
+  }
+
   def of(entries: Seq[MetadataEntry]): MetadataImpl = {
     val transformedEntries =
       entries.map { entry =>
@@ -271,6 +292,11 @@ object MetadataImpl {
       }
 
     new MetadataImpl(transformedEntries)
+  }
+
+  def of(metadata: SpiMetadata): MetadataImpl = {
+    val entries = metadata.entries.map(e => MetadataEntry(e.key, MetadataEntry.Value.StringValue(e.value)))
+    new MetadataImpl(entries)
   }
 
 }

@@ -522,7 +522,6 @@ public class SdkIntegrationTest extends TestKitSupport {
   }
 
   @Test
-  @Disabled //TODO revert once we deal with metadata translation
   public void verifyActionWithMetadata() {
 
     String metadataValue = "action-value";
