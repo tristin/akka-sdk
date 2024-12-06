@@ -94,6 +94,7 @@ import scala.jdk.CollectionConverters._
 
 import akka.javasdk.impl.consumer.ConsumerImpl
 import akka.javasdk.impl.eventsourcedentity.EventSourcedEntityImpl
+import akka.javasdk.impl.serialization.JsonSerializer
 import akka.javasdk.impl.timedaction.TimedActionImpl
 import akka.runtime.sdk.spi.ConsumerDescriptor
 import akka.runtime.sdk.spi.EventSourcedEntityDescriptor
@@ -275,7 +276,8 @@ private final class Sdk(
     dependencyProviderOverride: Option[DependencyProvider],
     startedPromise: Promise[StartupContext]) {
   private val logger = LoggerFactory.getLogger(getClass)
-  private val messageCodec = new JsonMessageCodec
+  private val messageCodec = new JsonMessageCodec // FIXME replace with JsonSerializer completely
+  private val serializer = new JsonSerializer
   private val ComponentLocator.LocatedClasses(componentClasses, maybeServiceClass) =
     ComponentLocator.locateUserComponents(system)
   @volatile private var dependencyProviderOpt: Option[DependencyProvider] = dependencyProviderOverride
@@ -391,7 +393,7 @@ private final class Sdk(
               componentId,
               clz,
               factoryContext.entityId,
-              messageCodec,
+              serializer,
               context =>
                 wiredInstance(clz.asInstanceOf[Class[EventSourcedEntity[AnyRef, AnyRef]]]) {
                   // remember to update component type API doc and docs if changing the set of injectables
@@ -416,7 +418,7 @@ private final class Sdk(
               runtimeComponentClients.timerClient,
               sdkExecutionContext,
               sdkTracerFactory,
-              messageCodec)
+              serializer)
           new TimedActionDescriptor(componentId, timedActionSpi)
       }
 
@@ -435,7 +437,7 @@ private final class Sdk(
               runtimeComponentClients.timerClient,
               sdkExecutionContext,
               sdkTracerFactory,
-              messageCodec,
+              serializer,
               ComponentDescriptorFactory.findIgnore(consumerClass))
           new ConsumerDescriptor(componentId, timedActionSpi)
       }
@@ -559,7 +561,6 @@ private final class Sdk(
       }
 
       override def discovery: Discovery = discoveryEndpoint
-      override def eventSourcedEntities: Option[EventSourcedEntities] = eventSourcedEntitiesEndpoint
       override def eventSourcedEntityDescriptors: Seq[EventSourcedEntityDescriptor] =
         Sdk.this.eventSourcedEntityDescriptors
       override def valueEntities: Option[ValueEntities] = valueEntitiesEndpoint
@@ -577,15 +578,15 @@ private final class Sdk(
   }
 
   private def timedActionService[A <: TimedAction](clz: Class[A]): TimedActionService[A] =
-    new TimedActionService[A](clz, messageCodec, () => wiredInstance(clz)(sideEffectingComponentInjects(None)))
+    new TimedActionService[A](clz, serializer, () => wiredInstance(clz)(sideEffectingComponentInjects(None)))
 
   private def consumerService[A <: Consumer](clz: Class[A]): ConsumerService[A] =
-    new ConsumerService[A](clz, messageCodec, () => wiredInstance(clz)(sideEffectingComponentInjects(None)))
+    new ConsumerService[A](clz, serializer, () => wiredInstance(clz)(sideEffectingComponentInjects(None)))
 
   private def workflowService[S, W <: Workflow[S]](clz: Class[W]): WorkflowService[S, W] = {
     new WorkflowService[S, W](
       clz,
-      messageCodec,
+      serializer,
       { context =>
 
         val workflow = wiredInstance(clz) {
@@ -619,7 +620,7 @@ private final class Sdk(
       clz: Class[ES]): EventSourcedEntityService[S, E, ES] =
     EventSourcedEntityService(
       clz,
-      messageCodec,
+      serializer,
       context =>
         wiredInstance(clz) {
           // remember to update component type API doc and docs if changing the set of injectables
@@ -629,7 +630,7 @@ private final class Sdk(
   private def keyValueEntityService[S, VE <: KeyValueEntity[S]](clz: Class[VE]): KeyValueEntityService[S, VE] =
     new KeyValueEntityService(
       clz,
-      messageCodec,
+      serializer,
       context =>
         wiredInstance(clz) {
           // remember to update component type API doc and docs if changing the set of injectables
@@ -639,7 +640,7 @@ private final class Sdk(
   private def viewService[V <: View](clz: Class[V]): ViewService[V] =
     new ViewService[V](
       clz,
-      messageCodec,
+      serializer,
       // remember to update component type API doc and docs if changing the set of injectables
       wiredInstance(_)(PartialFunction.empty))
 
@@ -742,7 +743,7 @@ private final class Sdk(
       case None       => MetadataImpl.Empty
       case Some(span) => MetadataImpl.Empty.withTracing(span)
     }
-    new TimerSchedulerImpl(messageCodec, runtimeComponentClients.timerClient, metadata)
+    new TimerSchedulerImpl(runtimeComponentClients.timerClient, metadata)
   }
 
   private def httpClientProvider(openTelemetrySpan: Option[Span]): HttpClientProvider =
