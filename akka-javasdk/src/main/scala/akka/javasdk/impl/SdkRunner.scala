@@ -8,6 +8,7 @@ import java.lang.reflect.Constructor
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.util.concurrent.CompletionStage
+
 import scala.annotation.nowarn
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
@@ -17,6 +18,7 @@ import scala.jdk.FutureConverters._
 import scala.jdk.OptionConverters.RichOptional
 import scala.reflect.ClassTag
 import scala.util.control.NonFatal
+
 import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
@@ -80,6 +82,7 @@ import akka.runtime.sdk.spi.SpiSettings
 import akka.runtime.sdk.spi.SpiWorkflow
 import akka.runtime.sdk.spi.StartContext
 import akka.runtime.sdk.spi.TimedActionDescriptor
+import akka.runtime.sdk.spi.UserFunctionError
 import akka.runtime.sdk.spi.views.SpiViewDescriptor
 import akka.runtime.sdk.spi.WorkflowDescriptor
 import akka.stream.Materializer
@@ -172,6 +175,22 @@ class SdkRunner private (dependencyProvider: Option[DependencyProvider]) extends
  * INTERNAL API
  */
 @InternalApi
+private object ComponentType {
+  // Those are also defined in ComponentAnnotationProcessor, and must be the same
+
+  val EventSourcedEntity = "event-sourced-entity"
+  val KeyValueEntity = "key-value-entity"
+  val Workflow = "workflow"
+  val HttpEndpoint = "http-endpoint"
+  val Consumer = "consumer"
+  val TimedAction = "timed-action"
+  val View = "view"
+}
+
+/**
+ * INTERNAL API
+ */
+@InternalApi
 private object ComponentLocator {
 
   // populated by annotation processor
@@ -186,13 +205,13 @@ private object ComponentLocator {
   def locateUserComponents(system: ActorSystem[_]): LocatedClasses = {
     val kalixComponentTypeAndBaseClasses: Map[String, Class[_]] =
       Map(
-        "http-endpoint" -> classOf[AnyRef],
-        "timed-action" -> classOf[TimedAction],
-        "consumer" -> classOf[Consumer],
-        "event-sourced-entity" -> classOf[EventSourcedEntity[_, _]],
-        "workflow" -> classOf[Workflow[_]],
-        "key-value-entity" -> classOf[KeyValueEntity[_]],
-        "view" -> classOf[AnyRef])
+        ComponentType.HttpEndpoint -> classOf[AnyRef],
+        ComponentType.TimedAction -> classOf[TimedAction],
+        ComponentType.Consumer -> classOf[Consumer],
+        ComponentType.EventSourcedEntity -> classOf[EventSourcedEntity[_, _]],
+        ComponentType.Workflow -> classOf[Workflow[_]],
+        ComponentType.KeyValueEntity -> classOf[KeyValueEntity[_]],
+        ComponentType.View -> classOf[AnyRef])
 
     // Alternative to but inspired by the stdlib SPI style of registering in META-INF/services
     // since we don't always have top supertypes and want to inject things into component constructors
@@ -627,6 +646,11 @@ private final class Sdk(
       override def workflowDescriptors: Seq[WorkflowDescriptor] =
         Sdk.this.workflowDescriptors
 
+      override def reportError(err: UserFunctionError): Future[Done] =
+        Future.successful(Done) // FIXME implemented in other PR
+
+      override def healthCheck(): Future[Done] =
+        Future.successful(Done) // FIXME implemented in other PR
     }
   }
 

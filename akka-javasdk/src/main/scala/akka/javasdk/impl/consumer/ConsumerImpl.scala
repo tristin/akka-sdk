@@ -34,10 +34,10 @@ import akka.runtime.sdk.spi.SpiConsumer
 import akka.runtime.sdk.spi.SpiConsumer.Effect
 import akka.runtime.sdk.spi.SpiConsumer.Message
 import akka.runtime.sdk.spi.SpiMetadata
+import akka.runtime.sdk.spi.SpiMetadataEntry
 import akka.runtime.sdk.spi.TimerClient
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.api.trace.Tracer
-import kalix.protocol.component.MetadataEntry
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
@@ -115,7 +115,7 @@ private[impl] final class ConsumerImpl[C <: Consumer](
             handleUnexpectedException(message, ex)
           }
       case IgnoreEffect =>
-        Future.successful(new Effect(ignore = true, reply = None, metadata = SpiMetadata.Empty, error = None))
+        Future.successful(new Effect(ignore = true, reply = None, metadata = SpiMetadata.empty, error = None))
       case unknown =>
         throw new IllegalArgumentException(s"Unknown TimedAction.Effect type ${unknown.getClass}")
     }
@@ -137,7 +137,7 @@ private[impl] final class ConsumerImpl[C <: Consumer](
     new Effect(
       ignore = false,
       reply = None,
-      metadata = SpiMetadata.Empty,
+      metadata = SpiMetadata.empty,
       error = Some(new SpiConsumer.Error(s"Unexpected error [$correlationId]")))
   }
 
@@ -172,10 +172,7 @@ private[impl] final class MessageContextImpl(
   override def componentCallMetadata: MetadataImpl = {
     if (metadata.has(Telemetry.TRACE_PARENT_KEY)) {
       MetadataImpl.of(
-        List(
-          MetadataEntry(
-            Telemetry.TRACE_PARENT_KEY,
-            MetadataEntry.Value.StringValue(metadata.get(Telemetry.TRACE_PARENT_KEY).get()))))
+        List(new SpiMetadataEntry(Telemetry.TRACE_PARENT_KEY, metadata.get(Telemetry.TRACE_PARENT_KEY).get())))
     } else {
       MetadataImpl.Empty
     }
