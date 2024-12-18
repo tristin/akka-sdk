@@ -29,7 +29,6 @@ import akka.javasdk.view.View
 import akka.javasdk.workflow.Workflow
 import akka.runtime.sdk.spi.ConsumerDestination
 import akka.runtime.sdk.spi.ConsumerSource
-// TODO: abstract away spring dependency
 import akka.javasdk.impl.reflection.Reflect.Syntax._
 
 /**

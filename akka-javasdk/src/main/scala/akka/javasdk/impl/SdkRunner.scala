@@ -622,11 +622,8 @@ private final class Sdk(
         val messages = message :: detail ::: seeDocs
         val logMessage = messages.mkString("\n\n")
 
-        // ignoring waring for runtime version
-        // TODO: remove it once we remove this check in the runtime
-        if (err.code != "AK-00010") {
-          SdkRunner.userServiceLog.atLevel(err.severity).log(logMessage)
-        }
+        SdkRunner.userServiceLog.atLevel(err.severity).log(logMessage)
+
         SdkRunner.FutureDone
       }
 
