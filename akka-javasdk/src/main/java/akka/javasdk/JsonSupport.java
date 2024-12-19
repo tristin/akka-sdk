@@ -5,10 +5,10 @@
 package akka.javasdk;
 
 import akka.Done;
-import akka.annotation.InternalApi;
 import akka.javasdk.annotations.Migration;
 import akka.javasdk.impl.AnySupport;
 import akka.javasdk.impl.ByteStringEncoding;
+import akka.runtime.sdk.spi.BytesPayload;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
@@ -82,6 +82,8 @@ public final class JsonSupport {
     return objectMapper;
   }
 
+  private static akka.javasdk.impl.serialization.JsonSerializer jsonSerializer = new akka.javasdk.impl.serialization.JsonSerializer();
+
   private JsonSupport() {
   }
 
@@ -96,7 +98,10 @@ public final class JsonSupport {
    * for the JSON type instead.
    *
    * @see {{encodeJson(T, String}}
+   *
+   * @deprecated Protobuf Any with JSON is not supported
    */
+  @Deprecated
   public static <T> Any encodeJson(T value) {
     return encodeJson(value, value.getClass().getName());
   }
@@ -111,7 +116,10 @@ public final class JsonSupport {
    *                 JSON, useful for example when multiple different objects are passed through a pub/sub
    *                 topic.
    * @throws IllegalArgumentException if the given value cannot be turned into JSON
+   *
+   * @deprecated Protobuf Any with JSON is not supported
    */
+  @Deprecated
   public static <T> Any encodeJson(T value, String jsonType) {
     try {
       ByteString bytes = encodeToBytes(value);
@@ -123,26 +131,89 @@ public final class JsonSupport {
     }
   }
 
-  // FIXME do we really want all these to be public API?
+  /**
+   * @deprecated Use encodeToAkkaByteString
+   */
+  @Deprecated
   public static <T> ByteString encodeToBytes(T value) throws JsonProcessingException {
     return UnsafeByteOperations.unsafeWrap(
       objectMapper.writerFor(value.getClass()).writeValueAsBytes(value));
   }
 
-  public static <T> akka.util.ByteString encodeToAkkaByteString(T value) throws JsonProcessingException {
-    return akka.util.ByteString.fromArrayUnsafe(objectMapper.writerFor(value.getClass()).writeValueAsBytes(value));
+  /**
+   * Encode the given value as JSON using Jackson.
+   *
+   * @param value    the object to encode as JSON, must be an instance of a class properly annotated
+   *                 with the needed Jackson annotations.
+   * @throws IllegalArgumentException if the given value cannot be turned into JSON
+   */
+  public static <T> akka.util.ByteString encodeToAkkaByteString(T value) {
+    try {
+      return akka.util.ByteString.fromArrayUnsafe(objectMapper.writerFor(value.getClass()).writeValueAsBytes(value));
+    } catch (JsonProcessingException ex) {
+      throw new IllegalArgumentException(
+          "Could not encode [" + value.getClass().getName() + "] as JSON", ex);
+    }
   }
 
-  public static akka.util.ByteString encodeDynamicToAkkaByteString(String key, String value) throws JsonProcessingException {
-    ObjectNode dynamicJson = objectMapper.createObjectNode().put(key, value);
-    return akka.util.ByteString.fromArrayUnsafe(objectMapper.writeValueAsBytes(dynamicJson));
+  /**
+   * @deprecated was only intended for internal use
+   */
+  @Deprecated
+  public static akka.util.ByteString encodeDynamicToAkkaByteString(String key, String value) {
+    try {
+      ObjectNode dynamicJson = objectMapper.createObjectNode().put(key, value);
+      return akka.util.ByteString.fromArrayUnsafe(objectMapper.writeValueAsBytes(dynamicJson));
+    } catch (JsonProcessingException ex) {
+      throw new IllegalArgumentException(
+          "Could not encode dynamic key/value as JSON", ex);
+    }
   }
 
-  public static akka.util.ByteString encodeDynamicCollectionToAkkaByteString(String key, Collection<?> values) throws JsonProcessingException {
-    ObjectNode objectNode = objectMapper.createObjectNode();
-    ArrayNode dynamicJson = objectNode.putArray(key);
-    values.forEach(v -> dynamicJson.add(v.toString()));
-    return akka.util.ByteString.fromArrayUnsafe(objectMapper.writeValueAsBytes(objectNode));
+  /**
+   * @deprecated was only intended for internal use
+   */
+  @Deprecated
+  public static akka.util.ByteString encodeDynamicCollectionToAkkaByteString(String key, Collection<?> values) {
+    try {
+      ObjectNode objectNode = objectMapper.createObjectNode();
+      ArrayNode dynamicJson = objectNode.putArray(key);
+      values.forEach(v -> dynamicJson.add(v.toString()));
+      return akka.util.ByteString.fromArrayUnsafe(objectMapper.writeValueAsBytes(objectNode));
+    } catch (JsonProcessingException ex) {
+      throw new IllegalArgumentException(
+          "Could not encode dynamic key/values as JSON", ex);
+    }
+  }
+
+  /**
+   * Decode the given bytes to an instance of T using Jackson. The bytes must be
+   * the JSON string as bytes.
+   *
+   * @param valueClass The type of class to deserialize the object to, the class must have the
+   *                   proper Jackson annotations for deserialization.
+   * @param bytes      The bytes to deserialize.
+   * @return The decoded object
+   * @throws IllegalArgumentException if the given value cannot be decoded to a T
+   *
+   */
+  public static <T> T decodeJson(Class<T> valueClass, akka.util.ByteString bytes) {
+    return jsonSerializer.fromBytes(valueClass, new BytesPayload(bytes, jsonSerializer.contentTypeFor(valueClass)));
+  }
+
+  /**
+   * Decode the given bytes to an instance of T using Jackson. The bytes must be
+   * the JSON string as bytes.
+   *
+   * @param valueClass The type of class to deserialize the object to, the class must have the
+   *                   proper Jackson annotations for deserialization.
+   * @param bytes      The bytes to deserialize.
+   * @return The decoded object
+   * @throws IllegalArgumentException if the given value cannot be decoded to a T
+   *
+   */
+  public static <T> T decodeJson(Class<T> valueClass, byte[] bytes) {
+    return decodeJson(valueClass, akka.util.ByteString.fromArrayUnsafe(bytes));
   }
 
   /**
@@ -154,7 +225,10 @@ public final class JsonSupport {
    * @param any        The protobuf Any object to deserialize.
    * @return The decoded object
    * @throws IllegalArgumentException if the given value cannot be decoded to a T
+   *
+   * @deprecated Protobuf Any with JSON is not supported
    */
+  @Deprecated
   public static <T> T decodeJson(Class<T> valueClass, Any any) {
     if (!AnySupport.isJsonTypeUrl(any.getTypeUrl())) {
       throw new IllegalArgumentException(
@@ -177,7 +251,7 @@ public final class JsonSupport {
           if (fromVersion < currentVersion) {
             return migrate(valueClass, decodedBytes, fromVersion, migration);
           } else if (fromVersion == currentVersion) {
-            return parseBytes(decodedBytes.toByteArray(), valueClass);
+            return objectMapper.readValue(decodedBytes.toByteArray(), valueClass);
           } else if (fromVersion <= supportedForwardVersion) {
             return migrate(valueClass, decodedBytes, fromVersion, migration);
           } else {
@@ -185,7 +259,7 @@ public final class JsonSupport {
                 "behind version " + fromVersion + " of deserialized type [" + valueClass.getName() + "]");
           }
         } else {
-          return parseBytes(decodedBytes.toByteArray(), valueClass);
+          return objectMapper.readValue(decodedBytes.toByteArray(), valueClass);
         }
       } catch (JsonProcessingException e) {
         throw jsonProcessingException(valueClass, any, e);
@@ -196,6 +270,10 @@ public final class JsonSupport {
     }
   }
 
+  /**
+   * @deprecated Use decodeJson
+   */
+  @Deprecated
   public static <T> T parseBytes(byte[] bytes, Class<T> valueClass) throws IOException {
     return objectMapper.readValue(bytes, valueClass);
   }
@@ -236,6 +314,11 @@ public final class JsonSupport {
     }
   }
 
+
+  /**
+   * @deprecated Protobuf Any with JSON is not supported
+   */
+  @Deprecated
   public static <T, C extends Collection<T>> C decodeJsonCollection(Class<T> valueClass, Class<C> collectionType, Any any) {
     if (!AnySupport.isJsonTypeUrl(any.getTypeUrl())) {
       throw new IllegalArgumentException(
@@ -257,6 +340,14 @@ public final class JsonSupport {
     }
   }
 
+  public static <T, C extends Collection<T>> C decodeJsonCollection(Class<T> valueClass, Class<C> collectionType, akka.util.ByteString bytes) {
+    return jsonSerializer.fromBytes(valueClass, collectionType, new BytesPayload(bytes, jsonSerializer.contentTypeFor(valueClass)));
+  }
+
+  public static <T, C extends Collection<T>> C decodeJsonCollection(Class<T> valueClass, Class<C> collectionType, byte[] bytes) {
+    return decodeJsonCollection(valueClass, collectionType, akka.util.ByteString.fromArrayUnsafe(bytes));
+  }
+
   /**
    * Decode the given protobuf Any to an instance of T using Jackson but only if the suffix of the
    * type URL matches the given jsonType.
@@ -264,7 +355,10 @@ public final class JsonSupport {
    * @return An Optional containing the successfully decoded value or an empty Optional if the type
    *     suffix does not match.
    * @throws IllegalArgumentException if the suffix matches but the Any cannot be parsed into a T
+   *
+   * @deprecated Protobuf Any with JSON is not supported
    */
+  @Deprecated
   public static <T> Optional<T> decodeJson(Class<T> valueClass, String jsonType, Any any) {
     if (any.getTypeUrl().endsWith(jsonType)) {
       return Optional.of(decodeJson(valueClass, any));
@@ -273,15 +367,6 @@ public final class JsonSupport {
     }
   }
 
-  /**
-   * INTERNAL API
-   * @hidden
-   */
-  @InternalApi
-  public static <T> T decodeJson(Class<T> valueClass, com.google.protobuf.any.Any scalaPbAny) {
-    var javaAny = com.google.protobuf.any.Any.toJavaProto(scalaPbAny);
-    return JsonSupport.decodeJson(valueClass, javaAny);
-  }
 }
 
 class DoneSerializer extends JsonSerializer<Done> {
