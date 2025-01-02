@@ -8,6 +8,7 @@ import java.lang.reflect.Constructor
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.util.concurrent.CompletionStage
+
 import scala.annotation.nowarn
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
@@ -17,6 +18,7 @@ import scala.jdk.FutureConverters._
 import scala.jdk.OptionConverters.RichOptional
 import scala.reflect.ClassTag
 import scala.util.control.NonFatal
+
 import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
@@ -94,10 +96,12 @@ import io.opentelemetry.context.{ Context => OtelContext }
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.slf4j.event.Level
-
 import java.util
 import java.util.Optional
+
 import scala.jdk.OptionConverters.RichOption
+
+import akka.javasdk.annotations.Profile
 
 /**
  * INTERNAL API
@@ -354,6 +358,24 @@ private final class Sdk(
     }
   }
 
+  private def hasCorrectProfile(clz: Class[_]): Boolean = {
+    if (clz.hasAnnotation[Profile]) {
+      val profiles = clz.getAnnotation(classOf[Profile]).value
+      if (profiles.isEmpty || profiles.forall(sdkSettings.profiles.contains)) {
+        true
+      } else {
+        logger.info(
+          "Ignoring component [{}] as it has the a profiles [{}], active profiles [{}]",
+          clz.getName,
+          profiles.mkString(", "),
+          sdkSettings.profiles.mkString(", "))
+        false
+      }
+    } else {
+      true
+    }
+  }
+
   // command handlers candidate must have 0 or 1 parameter and return the components effect type
   // we might later revisit this, instead of single param, we can require (State, Cmd) => Effect like in Akka
   def isCommandHandlerCandidate[E](method: Method)(implicit effectType: ClassTag[E]): Boolean = {
@@ -417,6 +439,7 @@ private final class Sdk(
 
   componentClasses
     .filter(hasComponentId)
+    .filter(hasCorrectProfile)
     .foreach {
       case clz if classOf[EventSourcedEntity[_, _]].isAssignableFrom(clz) =>
         val componentId = clz.getAnnotation(classOf[ComponentId]).value

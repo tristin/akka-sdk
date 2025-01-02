@@ -14,6 +14,8 @@ import akkajavasdk.components.actions.hierarchy.HierarchyTimed;
 import akkajavasdk.components.eventsourcedentities.counter.Counter;
 import akkajavasdk.components.eventsourcedentities.counter.CounterEntity;
 import akkajavasdk.components.keyvalueentities.customer.CustomerEntity;
+import akkajavasdk.components.keyvalueentities.user.ProdCounterEntity;
+import akkajavasdk.components.keyvalueentities.user.TestCounterEntity;
 import akkajavasdk.components.keyvalueentities.user.User;
 import akkajavasdk.components.keyvalueentities.user.UserEntity;
 import akkajavasdk.components.keyvalueentities.user.UserSideEffect;
@@ -23,6 +25,7 @@ import org.awaitility.Awaitility;
 import org.hamcrest.core.IsEqual;
 import org.hamcrest.core.IsNull;
 import org.jetbrains.annotations.NotNull;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -38,11 +41,35 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExtendWith(Junit5LogCapturing.class)
 public class SdkIntegrationTest extends TestKitSupport {
 
+
   @Override
   protected TestKit.Settings testKitSettings() {
     // here only to show how to set different `Settings` in a test.
     return TestKit.Settings.DEFAULT
       .withTopicOutgoingMessages(CUSTOMERS_TOPIC);
+  }
+
+  @Test
+  public void verifyIfComponentIsActiveBasedOnProfile() {
+
+    var result = await(componentClient.forKeyValueEntity("test")
+      .method(TestCounterEntity::get)
+      .invokeAsync());
+
+    assertThat(result).isEqualTo(100);
+  }
+
+  @Test
+  public void verifyIfComponentIsDisabledBasedOnProfile() {
+
+
+    var exc = Assertions.assertThrows(IllegalArgumentException.class, () -> {
+      await(componentClient.forKeyValueEntity("test")
+        .method(ProdCounterEntity::get)
+        .invokeAsync());
+    });
+
+    assertThat(exc.getMessage()).contains("Unknown entity type [prod-counter]");
   }
 
 
@@ -65,41 +92,41 @@ public class SdkIntegrationTest extends TestKitSupport {
   public void verifyHierarchyTimedActionWiring() {
 
     timerScheduler.startSingleTimer("wired", ofMillis(0), componentClient.forTimedAction()
-        .method(HierarchyTimed::stringMessage)
-        .deferred("hello"));
+      .method(HierarchyTimed::stringMessage)
+      .deferred("hello"));
 
     Awaitility.await()
-        .atMost(20, TimeUnit.SECONDS)
-        .untilAsserted(() -> {
-          var value = StaticTestBuffer.getValue("hierarchy-action");
-          assertThat(value).isEqualTo("hello");
-        });
+      .atMost(20, TimeUnit.SECONDS)
+      .untilAsserted(() -> {
+        var value = StaticTestBuffer.getValue("hierarchy-action");
+        assertThat(value).isEqualTo("hello");
+      });
   }
 
   @Test
   public void verifyTimedActionListCommand() {
 
     timerScheduler.startSingleTimer("echo-action", ofMillis(0), componentClient.forTimedAction()
-        .method(EchoAction::stringMessages)
-        .deferred(List.of("hello", "mr")));
+      .method(EchoAction::stringMessages)
+      .deferred(List.of("hello", "mr")));
 
     Awaitility.await()
-        .atMost(20, TimeUnit.SECONDS)
-        .untilAsserted(() -> {
-          var value = StaticTestBuffer.getValue("echo-action");
-          assertThat(value).isEqualTo("hello mr");
-        });
+      .atMost(20, TimeUnit.SECONDS)
+      .untilAsserted(() -> {
+        var value = StaticTestBuffer.getValue("echo-action");
+        assertThat(value).isEqualTo("hello mr");
+      });
 
     timerScheduler.startSingleTimer("echo-action", ofMillis(0), componentClient.forTimedAction()
-        .method(EchoAction::commandMessages)
-        .deferred(List.of(new EchoAction.SomeCommand("tambourine"), new EchoAction.SomeCommand("man"))));
+      .method(EchoAction::commandMessages)
+      .deferred(List.of(new EchoAction.SomeCommand("tambourine"), new EchoAction.SomeCommand("man"))));
 
     Awaitility.await()
-        .atMost(20, TimeUnit.SECONDS)
-        .untilAsserted(() -> {
-          var value = StaticTestBuffer.getValue("echo-action");
-          assertThat(value).isEqualTo("tambourine man");
-        });
+      .atMost(20, TimeUnit.SECONDS)
+      .untilAsserted(() -> {
+        var value = StaticTestBuffer.getValue("echo-action");
+        assertThat(value).isEqualTo("tambourine man");
+      });
   }
 
   @Test
@@ -195,9 +222,6 @@ public class SdkIntegrationTest extends TestKitSupport {
   }
 
 
-
-
-
   @Test
   public void verifyUserSubscriptionAction() {
 
@@ -219,7 +243,6 @@ public class SdkIntegrationTest extends TestKitSupport {
       .until(() -> UserSideEffect.getUsers().get(user.id()),
         new IsNull<>());
   }
-
 
 
   @Test

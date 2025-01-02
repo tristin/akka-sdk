@@ -23,7 +23,8 @@ private[impl] object Settings {
       devModeSettings = Option.when(sdkConfig.getBoolean("dev-mode.enabled"))(
         DevModeSettings(
           serviceName = sdkConfig.getString("dev-mode.service-name"),
-          httpPort = sdkConfig.getInt("dev-mode.http-port"))))
+          httpPort = sdkConfig.getInt("dev-mode.http-port"))),
+      profiles = Option(sdkConfig.getString("profiles.active")).fold(Seq.empty[String])(_.split(",").toSeq))
   }
 
   final case class DevModeSettings(serviceName: String, httpPort: Int)
@@ -36,4 +37,5 @@ private[impl] object Settings {
 private[impl] final case class Settings(
     cleanupDeletedEventSourcedEntityAfter: Duration,
     cleanupDeletedKeyValueEntityAfter: Duration,
-    devModeSettings: Option[DevModeSettings])
+    devModeSettings: Option[DevModeSettings],
+    profiles: Seq[String])
