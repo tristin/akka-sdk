@@ -365,7 +365,7 @@ private final class Sdk(
         true
       } else {
         logger.info(
-          "Ignoring component [{}] as it has the a profiles [{}], active profiles [{}]",
+          "Ignoring component [{}] as it requires profiles [{}] to be activated, but only [{}] are active",
           clz.getName,
           profiles.mkString(", "),
           sdkSettings.profiles.mkString(", "))
