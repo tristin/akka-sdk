@@ -83,7 +83,7 @@ import akka.runtime.sdk.spi.SpiWorkflow
 import akka.runtime.sdk.spi.StartContext
 import akka.runtime.sdk.spi.TimedActionDescriptor
 import akka.runtime.sdk.spi.UserFunctionError
-import akka.runtime.sdk.spi.views.SpiViewDescriptor
+import akka.runtime.sdk.spi.ViewDescriptor
 import akka.runtime.sdk.spi.WorkflowDescriptor
 import akka.stream.Materializer
 import com.typesafe.config.Config
@@ -450,7 +450,12 @@ private final class Sdk(
               })
         }
         eventSourcedEntityDescriptors :+=
-          new EventSourcedEntityDescriptor(componentId, clz.getName, readOnlyCommandNames, instanceFactory)
+          new EventSourcedEntityDescriptor(
+            componentId,
+            clz.getName,
+            readOnlyCommandNames,
+            instanceFactory,
+            keyValue = false)
 
       case clz if classOf[KeyValueEntity[_]].isAssignableFrom(clz) =>
         val componentId = clz.getAnnotation(classOf[ComponentId]).value
@@ -475,7 +480,12 @@ private final class Sdk(
               })
         }
         keyValueEntityDescriptors :+=
-          new EventSourcedEntityDescriptor(componentId, clz.getName, readOnlyCommandNames, instanceFactory)
+          new EventSourcedEntityDescriptor(
+            componentId,
+            clz.getName,
+            readOnlyCommandNames,
+            instanceFactory,
+            keyValue = true)
 
       case clz if Reflect.isWorkflow(clz) =>
         val componentId = clz.getAnnotation(classOf[ComponentId]).value
@@ -543,7 +553,7 @@ private final class Sdk(
         logger.warn("Unknown component [{}]", clz.getName)
     }
 
-  private val viewDescriptors: Seq[SpiViewDescriptor] =
+  private val viewDescriptors: Seq[ViewDescriptor] =
     componentClasses
       .filter(hasComponentId)
       .collect {
@@ -618,7 +628,7 @@ private final class Sdk(
       override val consumersDescriptors: Seq[ConsumerDescriptor] =
         Sdk.this.consumerDescriptors
 
-      override val viewDescriptors: Seq[SpiViewDescriptor] =
+      override val viewDescriptors: Seq[ViewDescriptor] =
         Sdk.this.viewDescriptors
 
       override val workflowDescriptors: Seq[WorkflowDescriptor] =
