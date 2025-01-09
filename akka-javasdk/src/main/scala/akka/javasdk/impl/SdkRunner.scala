@@ -7,16 +7,21 @@ package akka.javasdk.impl
 import java.lang.reflect.Constructor
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
+import java.util
+import java.util.Optional
 import java.util.concurrent.CompletionStage
+
 import scala.annotation.nowarn
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.jdk.CollectionConverters._
 import scala.jdk.FutureConverters._
+import scala.jdk.OptionConverters.RichOption
 import scala.jdk.OptionConverters.RichOptional
 import scala.reflect.ClassTag
 import scala.util.control.NonFatal
+
 import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
@@ -94,10 +99,6 @@ import io.opentelemetry.context.{ Context => OtelContext }
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.slf4j.event.Level
-
-import java.util
-import java.util.Optional
-import scala.jdk.OptionConverters.RichOption
 
 /**
  * INTERNAL API
@@ -354,6 +355,16 @@ private final class Sdk(
     }
   }
 
+  private def isDisabled(clz: Class[_]): Boolean = {
+    val componentName = clz.getName
+    if (sdkSettings.disabledComponents.contains(componentName)) {
+      logger.info("Ignoring component [{}] as it is disabled in the configuration", clz.getName)
+      true
+    } else {
+      false
+    }
+  }
+
   // command handlers candidate must have 0 or 1 parameter and return the components effect type
   // we might later revisit this, instead of single param, we can require (State, Cmd) => Effect like in Akka
   def isCommandHandlerCandidate[E](method: Method)(implicit effectType: ClassTag[E]): Boolean = {
@@ -405,6 +416,7 @@ private final class Sdk(
   // collect all Endpoints and compose them to build a larger router
   private val httpEndpointDescriptors = componentClasses
     .filter(Reflect.isRestEndpoint)
+    .filterNot(isDisabled)
     .map { httpEndpointClass =>
       HttpEndpointDescriptorFactory(httpEndpointClass, httpEndpointFactory(httpEndpointClass))
     }
@@ -414,9 +426,11 @@ private final class Sdk(
   private var workflowDescriptors = Vector.empty[WorkflowDescriptor]
   private var timedActionDescriptors = Vector.empty[TimedActionDescriptor]
   private var consumerDescriptors = Vector.empty[ConsumerDescriptor]
+  private var viewDescriptors = Vector.empty[ViewDescriptor]
 
   componentClasses
     .filter(hasComponentId)
+    .filterNot(isDisabled)
     .foreach {
       case clz if classOf[EventSourcedEntity[_, _]].isAssignableFrom(clz) =>
         val componentId = clz.getAnnotation(classOf[ComponentId]).value
@@ -545,6 +559,9 @@ private final class Sdk(
             consumerDestination(consumerClass),
             timedActionSpi)
 
+      case clz if classOf[View].isAssignableFrom(clz) =>
+        viewDescriptors :+= ViewDescriptorFactory(clz, serializer, sdkExecutionContext)
+
       case clz if Reflect.isRestEndpoint(clz) =>
       // handled separately because ComponentId is not mandatory
 
@@ -552,13 +569,6 @@ private final class Sdk(
         // some other class with @ComponentId annotation
         logger.warn("Unknown component [{}]", clz.getName)
     }
-
-  private val viewDescriptors: Seq[ViewDescriptor] =
-    componentClasses
-      .filter(hasComponentId)
-      .collect {
-        case clz if classOf[View].isAssignableFrom(clz) => ViewDescriptorFactory(clz, serializer, sdkExecutionContext)
-      }
 
   // these are available for injecting in all kinds of component that are primarily
   // for side effects
