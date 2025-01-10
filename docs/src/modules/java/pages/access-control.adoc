@@ -13,7 +13,7 @@ For a conceptual introduction, see xref:security:acls.adoc[] in the **Security**
 
 A principal in Akka is an abstract concept that represents anything that can make or be the source of a request.
 Principals that are currently supported by Akka include other services, and the internet. Services are identified
-by the service name chosen when deployed. Akka uses mTLS support to associate requests with one or more principals.
+by the service name chosen when deployed. Akka uses mutual TLS (mTLS) to associate requests with one or more principals.
 
 Note that requests that have the internet principal are requests that Akka has identified as coming through the Akka
 ingress route. This is identified by mTLS, however it does not imply that mTLS has been
