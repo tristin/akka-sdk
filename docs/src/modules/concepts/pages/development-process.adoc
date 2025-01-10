@@ -53,7 +53,7 @@ Services can interact asynchronously with other services and with external syste
 
 === Workflows
 
-Akka Workflows are high-level descriptions to easily align business requirements with their implementation in code. Orchestration across multiple services with support for failure scenarios and compensating actions is simple with xref:java:workflows.adoc[Workflows].
+Akka Workflows are high-level descriptions to easily align business requirements with their implementation in code. Orchestration across multiple services including failure scenarios and compensating actions is simple with xref:java:workflows.adoc[Workflows].
 
 === Views
 
