@@ -538,7 +538,7 @@ private final class Sdk(
       case clz if classOf[Consumer].isAssignableFrom(clz) =>
         val componentId = clz.getAnnotation(classOf[ComponentId]).value
         val consumerClass = clz.asInstanceOf[Class[Consumer]]
-        val timedActionSpi =
+        val consumerSpi =
           new ConsumerImpl[Consumer](
             componentId,
             () => wiredInstance(consumerClass)(sideEffectingComponentInjects(None)),
@@ -556,7 +556,7 @@ private final class Sdk(
             clz.getName,
             consumerSource(consumerClass),
             consumerDestination(consumerClass),
-            timedActionSpi)
+            consumerSpi)
 
       case clz if classOf[View].isAssignableFrom(clz) =>
         viewDescriptors :+= ViewDescriptorFactory(clz, serializer, sdkExecutionContext)
