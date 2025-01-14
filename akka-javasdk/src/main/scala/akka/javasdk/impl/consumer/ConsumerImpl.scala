@@ -5,9 +5,12 @@
 package akka.javasdk.impl.consumer
 
 import java.util.Optional
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.util.control.NonFatal
+
+import akka.Done
 import akka.actor.ActorSystem
 import akka.annotation.InternalApi
 import akka.javasdk.Metadata
@@ -31,6 +34,7 @@ import akka.javasdk.impl.telemetry.TraceInstrumentation
 import akka.javasdk.impl.timer.TimerSchedulerImpl
 import akka.javasdk.timer.TimerScheduler
 import akka.runtime.sdk.spi.BytesPayload
+import akka.runtime.sdk.spi.ConsumerDestination
 import akka.runtime.sdk.spi.SpiConsumer
 import akka.runtime.sdk.spi.SpiConsumer.Effect
 import akka.runtime.sdk.spi.SpiConsumer.Message
@@ -48,6 +52,7 @@ private[impl] final class ConsumerImpl[C <: Consumer](
     componentId: String,
     val factory: () => C,
     consumerClass: Class[C],
+    consumerDestination: Option[ConsumerDestination],
     _system: ActorSystem,
     timerClient: TimerClient,
     sdkExecutionContext: ExecutionContext,
@@ -96,11 +101,22 @@ private[impl] final class ConsumerImpl[C <: Consumer](
 
   private def toSpiEffect(message: Message, effect: Consumer.Effect): Future[Effect] = {
     effect match {
-      case ProduceEffect(msg, metadata) =>
+      case ProduceEffect(msg: Done, metadata) =>
         Future.successful(
           new SpiConsumer.ProduceEffect(
             payload = Some(serializer.toBytes(msg)),
             metadata = MetadataImpl.toSpi(metadata)))
+      case ProduceEffect(msg, metadata) =>
+        if (consumerDestination.isEmpty) {
+          val baseMsg = s"Consumer [$componentId] produced a message but no destination is defined."
+          log.error(baseMsg + " Add @Produce annotation or change the Consumer.Effect outcome.")
+          Future.successful(new SpiConsumer.ErrorEffect(new SpiConsumer.Error(baseMsg)))
+        } else {
+          Future.successful(
+            new SpiConsumer.ProduceEffect(
+              payload = Some(serializer.toBytes(msg)),
+              metadata = MetadataImpl.toSpi(metadata)))
+        }
       case AsyncEffect(futureEffect) =>
         futureEffect
           .flatMap { effect => toSpiEffect(message, effect) }
