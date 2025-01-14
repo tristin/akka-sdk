@@ -11,6 +11,7 @@ import akka.javasdk.view.TableUpdater;
 import akka.javasdk.view.View;
 
 import java.time.Instant;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -30,7 +31,10 @@ public class AllTheTypesView extends View {
       Float wrappedFloat,
       Double wrappedDouble,
       Boolean wrappedBoolean,
+      // time and date types
       Instant instant,
+      ZonedDateTime zonedDateTime,
+      // other more or less complex types
       Optional<String> optionalString,
       List<String> repeatedString,
       // AllTheTypesKvEntity.AllTheTypes.nestedMessage.email
@@ -58,6 +62,7 @@ public class AllTheTypesView extends View {
       wrappedDouble = :wrappedDouble AND
       wrappedBoolean = :wrappedBoolean AND
       instant = :instant AND
+      zonedDateTime = :zonedDateTime AND
       optionalString = :optionalString AND
       repeatedString = :repeatedString AND
       nestedMessage.email = :nestedEmail
@@ -69,4 +74,8 @@ public class AllTheTypesView extends View {
     return queryStreamResult();
   }
 
+  public record BeforeRequest(Instant instant) {}
+
+  @Query("SELECT * FROM events WHERE zonedDateTime < :instant")
+  public QueryStreamEffect<AllTheTypesKvEntity.AllTheTypes> beforeInstant(BeforeRequest query)  { return queryStreamResult(); }
 }
