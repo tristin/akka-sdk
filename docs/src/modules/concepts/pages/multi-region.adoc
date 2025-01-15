@@ -1,21 +1,24 @@
-= Multi-region support
+= Multi-region operations
 
 include::ROOT:partial$include.adoc[]
 
-Akka's opinionated approach to domain modelling allow for applications to run in multiple regions without modification. An Akka application written as a single region application can be turned into a multi-region application with nothing more than a change in deployment configuration.
+Akka applications run in multiple regions with their data transparently and continuously replicated even across multiple cloud providers.
+Akka applications do not require code modifications to run within multiple regions. Operators define controls to determine which regions
+an application will operate within and whether that application's data is pinned to one region or replicated across many.
 
-The multi-region use cases that Akka's multi-region support encompasses include:
+Akka ensures regardless of which region receives a request, the request can be serviced. Multiple replication strategies can be configured, with each offering varying features for different use cases.
 
+Multi-region operations are ideal for:
+
+* Applications that require 99.9999% availability
 * Geographic failover
 * Geo-homing of data for low latency access
 * Low latency global reads
-* Low latency global writes (coming soon)
-
-Akka ensures that no matter which region receives a request, the request can be serviced. Multiple replication strategies can be configured, with each offering varying features for different use cases.
+* Low latency global writes
 
 == Examples
 
-The two main replication strategies that Akka offers are replicated reads, and replicated writes (coming soon).
+The two main replication strategies that Akka offers are replicated reads, and replicated writes.
 
 === Replicated reads
 
@@ -47,6 +50,6 @@ image:geo-d.svg[Geo data replication, width=600]
 
 When Bob travels to the USA, read requests that Bob makes on his data are handled locally, while write requests are forwarded to the UK. Meanwhile, write requests made by Alice on her data is all handled locally, with writes being replicated to the UK.
 
-=== Replicated writes (coming soon)
+=== Replicated writes
 
 The replicated write replication strategy allows every region to be capable of handling writes for all entities. This is done through the use of CRDTs, which can be modified concurrently in different regions, and their changes safely merged without conflict.

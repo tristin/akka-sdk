@@ -6,7 +6,7 @@ Entities are used to store the data defined in the xref:concepts:architecture-mo
 
 Entities have operations that can change their state. These operations are triggered asynchronously and implemented via methods that return xref:concepts:declarative-effects.adoc[`Effect`]. Operations allow entities to be dynamic and reflect the most up-to-date information and this all gets wired together for you.
 
-Akka supports two state models: _Event Sourced Entity_ and _Key Value Entity_. Event Sourced Entities build their state incrementally by storing each update as an event, while Key Value Entities store their entire state as a single entry in a Key/Value store. To replicate state across clusters and regions, Akka uses specific conflict resolution strategies for each state model.
+Akka offers two state models: _Event Sourced Entity_ and _Key Value Entity_. Event Sourced Entities build their state incrementally by storing each update as an event, while Key Value Entities store their entire state as a single entry in a Key/Value store. To replicate state across clusters and regions, Akka uses specific conflict resolution strategies for each state model.
 
 NOTE: Although Key Value Entities are planned to support a Last Writer Wins (LWW) mechanism, this feature is not yet available.
 
