@@ -10,7 +10,6 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.util.control.NonFatal
 
-import akka.Done
 import akka.actor.ActorSystem
 import akka.annotation.InternalApi
 import akka.javasdk.Metadata
@@ -24,7 +23,7 @@ import akka.javasdk.impl.ComponentType
 import akka.javasdk.impl.ErrorHandling
 import akka.javasdk.impl.MetadataImpl
 import akka.javasdk.impl.consumer.ConsumerEffectImpl.AsyncEffect
-import akka.javasdk.impl.consumer.ConsumerEffectImpl.IgnoreEffect
+import akka.javasdk.impl.consumer.ConsumerEffectImpl.ConsumedEffect
 import akka.javasdk.impl.consumer.ConsumerEffectImpl.ProduceEffect
 import akka.javasdk.impl.serialization.JsonSerializer
 import akka.javasdk.impl.telemetry.ConsumerCategory
@@ -101,11 +100,7 @@ private[impl] final class ConsumerImpl[C <: Consumer](
 
   private def toSpiEffect(message: Message, effect: Consumer.Effect): Future[Effect] = {
     effect match {
-      case ProduceEffect(msg: Done, metadata) =>
-        Future.successful(
-          new SpiConsumer.ProduceEffect(
-            payload = Some(serializer.toBytes(msg)),
-            metadata = MetadataImpl.toSpi(metadata)))
+      case ConsumedEffect => Future.successful(SpiConsumer.ConsumedEffect)
       case ProduceEffect(msg, metadata) =>
         if (consumerDestination.isEmpty) {
           val baseMsg = s"Consumer [$componentId] produced a message but no destination is defined."
@@ -123,8 +118,6 @@ private[impl] final class ConsumerImpl[C <: Consumer](
           .recover { case NonFatal(ex) =>
             handleUnexpectedException(message, ex)
           }
-      case IgnoreEffect =>
-        Future.successful(SpiConsumer.IgnoreEffect)
       case unknown =>
         throw new IllegalArgumentException(s"Unknown TimedAction.Effect type ${unknown.getClass}")
     }
