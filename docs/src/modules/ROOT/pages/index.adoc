@@ -34,7 +34,7 @@ Developers can access a local console that replicates runtime observability, tra
 
 == DevOps Operations
 Operators can configure application elasticity without deep architectural knowledge. Akka automates instance management to meet traffic needs while preserving performance SLAs. Services can be replicated across multiple regions, spanning different geographies and environments.
-Stateful services can be read-replicated or write-replicated (Q1 2025) with conflict resolution options. Services can migrate between locations without downtime and can be restarted from specific points in time.
+Stateful services can be read-replicated or write-replicated with conflict resolution options. Services can migrate between locations without downtime and can be restarted from specific points in time.
 Developers have access to a component library for creating various application types, including transactional, durable, Artificial Intelligence (AI) Retrieval-Augmented Generation (RAG), analytics, edge, event-sourced, and streaming applications.
 
 == Key Components
