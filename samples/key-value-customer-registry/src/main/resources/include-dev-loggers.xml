@@ -10,4 +10,8 @@
  -->
 <included>
     <logger name="customer" level="INFO"/>
+    <logger name="akka" level="TRACE"/>
+<!--    <logger name="akka.runtime" level="TRACE"/>-->
+    <logger name="kalix.runtime" level="TRACE"/>
 </included>
+
