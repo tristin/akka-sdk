@@ -30,6 +30,8 @@ curl -sL https://doc.akka.io/install-cli.sh | bash -s -- --prefix=$HOME --versio
 curl -sL https://doc.akka.io/install-cli.sh | bash -s -- -P $HOME -v {akka-cli-version} -V
 ....
 
+For manual installation, download https://downloads.akka.io/{akka-cli-version}/akka_linux_amd64_{akka-cli-version}.tar.gz[akka_linux_amd64_{akka-cli-version}.tar.gz], extract the `akka` executable and make it available on your PATH.
+
 --
 macOS::
 +
