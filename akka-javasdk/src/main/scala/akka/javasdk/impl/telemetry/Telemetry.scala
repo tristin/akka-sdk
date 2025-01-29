@@ -6,8 +6,6 @@ package akka.javasdk.impl.telemetry
 
 import akka.annotation.InternalApi
 import akka.javasdk.Metadata
-import akka.javasdk.impl.MetadataImpl
-import akka.javasdk.impl.Service
 import io.opentelemetry.api.OpenTelemetry
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.api.trace.SpanKind
@@ -17,18 +15,17 @@ import io.opentelemetry.context.propagation.ContextPropagators
 import io.opentelemetry.context.propagation.TextMapGetter
 import io.opentelemetry.context.propagation.TextMapSetter
 import io.opentelemetry.context.{ Context => OtelContext }
-import kalix.protocol.action.ActionCommand
-import kalix.protocol.component.MetadataEntry
-import kalix.protocol.component.MetadataEntry.Value.StringValue
-import kalix.protocol.component.{ Metadata => ProtocolMetadata }
-import kalix.protocol.entity.Command
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import java.lang
 import java.util.Collections
+
 import scala.collection.mutable
 import scala.jdk.OptionConverters._
+
+import akka.runtime.sdk.spi.SpiEntity
+import akka.runtime.sdk.spi.SpiMetadata
+import akka.runtime.sdk.spi.SpiMetadataEntry
 
 /**
  * INTERNAL API
@@ -50,8 +47,8 @@ case object ConsumerCategory extends ComponentCategory {
  * INTERNAL API
  */
 @InternalApi
-case object ActionCategory extends ComponentCategory {
-  def name = "Action"
+case object TimedActionCategory extends ComponentCategory {
+  def name = "TimedAction"
 }
 
 /**
@@ -92,8 +89,8 @@ private[akka] object Telemetry {
       carrier.getAllKeys
   }
 
-  lazy val builderSetter: TextMapSetter[mutable.Builder[MetadataEntry, _]] = (carrier, key, value) => {
-    carrier.addOne(new MetadataEntry(key, StringValue(value)))
+  lazy val builderSetter: TextMapSetter[mutable.Builder[SpiMetadataEntry, _]] = (carrier, key, value) => {
+    carrier.addOne(new SpiMetadataEntry(key, value))
   }
 
 }
@@ -103,14 +100,15 @@ private[akka] object Telemetry {
  */
 @InternalApi
 private[akka] object TraceInstrumentation {
-  // Trick to extract trace parent from a single protocol metadata entry and using the W3C decoding from OTEL
-  private val metadataEntryTraceParentGetter = new TextMapGetter[MetadataEntry]() {
+  // Trick to extract trace parent from a single metadata entry and using the W3C decoding from OTEL
+  private val metadataEntryTraceParentGetter = new TextMapGetter[SpiMetadataEntry]() {
 
-    override def get(carrier: MetadataEntry, key: String): String =
-      if (key == Telemetry.TRACE_PARENT_KEY) carrier.getStringValue
+    override def get(carrier: SpiMetadataEntry, key: String): String =
+      if (key == Telemetry.TRACE_PARENT_KEY) carrier.value
       else null
 
-    override def keys(carrier: MetadataEntry): lang.Iterable[String] = Collections.singleton(Telemetry.TRACE_PARENT_KEY)
+    override def keys(carrier: SpiMetadataEntry): lang.Iterable[String] =
+      Collections.singleton(Telemetry.TRACE_PARENT_KEY)
   }
 
   val InstrumentationScopeName: String = "akka-javasdk"
@@ -139,49 +137,50 @@ private[akka] final class TraceInstrumentation(
   private val enabled = tracer != OpenTelemetry.noop().getTracer(InstrumentationScopeName)
 
   /**
-   * Creates a span if it finds a trace parent in the command's metadata
+   * Creates a span if tracing enabled and it finds a trace parent in the command's metadata
    */
-  def buildSpan(service: Service, command: Command): Option[Span] =
-    if (enabled) internalBuildSpan(service, command.name, command.metadata, Some(command.entityId))
+  def buildEntityCommandSpan(
+      componentType: String,
+      componentId: String,
+      entityId: String,
+      command: SpiEntity.Command): Option[Span] =
+    if (enabled) internalBuildSpan(componentType, componentId, Some(command.name), command.metadata, Some(entityId))
     else None
 
   /**
-   * Creates a span if it finds a trace parent in the command's metadata
+   * Creates a span if tracing enabled and if it finds a trace parent in the command's metadata
    */
-  def buildSpan(service: Service, command: ActionCommand): Option[Span] =
-    if (enabled) {
-      val subject =
-        command.metadata.flatMap(_.entries.find(_.key == MetadataImpl.CeSubject).flatMap(_.value.stringValue))
-      internalBuildSpan(service, command.name, command.metadata, subject)
-    } else None
+  def buildSpan(
+      componentType: String,
+      componentId: String,
+      subjectId: Option[String],
+      spiMetadata: SpiMetadata): Option[Span] =
+    if (enabled) internalBuildSpan(componentType, componentId, None, spiMetadata, subjectId)
+    else None
 
   private def internalBuildSpan(
-      service: Service,
-      commandName: String,
-      commandMetadata: Option[ProtocolMetadata],
+      componentType: String,
+      componentId: String,
+      commandName: Option[String],
+      commandMetadata: SpiMetadata,
       subjectId: Option[String]): Option[Span] = {
     // only if there is a trace parent in the metadata
-    val traceParent = commandMetadata.flatMap(_.entries.find(_.key == TRACE_PARENT_KEY))
+    val traceParent = commandMetadata.entries.find(_.key == TRACE_PARENT_KEY)
     traceParent.map { traceParentMetadataEntry =>
       val parentContext = propagator.getTextMapPropagator
         .extract(OtelContext.current(), traceParentMetadataEntry, metadataEntryTraceParentGetter)
 
-      val spanName = s"$traceNamePrefix.${removeSyntheticName(commandName)}"
+      val spanName = s"$traceNamePrefix${commandName.fold("")("." + _)}"
       var spanBuilder =
         tracer
           .spanBuilder(spanName)
           .setParent(parentContext)
           .setSpanKind(SpanKind.SERVER)
-          .setAttribute("component.type", service.componentType)
-          .setAttribute("component.type_id", service.componentId)
+          .setAttribute("component.type", componentType)
+          .setAttribute("component.type_id", componentId)
       subjectId.foreach(id => spanBuilder = spanBuilder.setAttribute("component.id", id))
       spanBuilder.startSpan()
     }
   }
 
-  private def removeSyntheticName(maybeSyntheticName: String): String =
-    maybeSyntheticName
-      .replace("KalixSyntheticMethodOnES", "")
-      .replace("KalixSyntheticMethodOnTopic", "")
-      .replace("KalixSyntheticMethodOnStream", "")
 }

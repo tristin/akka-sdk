@@ -19,6 +19,7 @@ class MyJsonable {
   @BeanProperty var field: String = _
 }
 
+@Deprecated
 class JsonSupportSpec extends AnyWordSpec with Matchers {
 
   val myJsonable = new MyJsonable

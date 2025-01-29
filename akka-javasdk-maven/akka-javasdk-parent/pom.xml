@@ -7,12 +7,12 @@
     <parent>
         <groupId>io.akka</groupId>
         <artifactId>akka-javasdk-maven</artifactId>
-        <version>3.0.2</version>
+        <version>3.1.0</version>
     </parent>
 
     <groupId>io.akka</groupId>
     <artifactId>akka-javasdk-parent</artifactId>
-    <version>3.0.2</version>
+    <version>3.1.0</version>
     <packaging>pom</packaging>
 
 
@@ -34,11 +34,11 @@
 
         <maven.build.timestamp.format>yyyyMMddHHmmss</maven.build.timestamp.format>
 
-        <akka-javasdk.version>3.0.2</akka-javasdk.version>
+        <akka-javasdk.version>3.1.0</akka-javasdk.version>
 
         <!-- These are dependent on runtime environment and cannot be customized by users -->
         <maven.compiler.release>21</maven.compiler.release>
-        <kalix-runtime.version>1.2.5</kalix-runtime.version>
+        <kalix-runtime.version>1.3.0</kalix-runtime.version>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <skip.docker>false</skip.docker>
@@ -160,8 +160,6 @@
                                                         <exclude>com.typesafe.akka:akka-stream_2.13</exclude>
                                                         <exclude>com.hierynomus:asn-one</exclude>
                                                         <exclude>org.reactivestreams:reactive-streams</exclude>
-                                                        <!-- Runtime -->
-                                                        <exclude>io.kalix:kalix-proxy-protocol</exclude>
                                                         <!-- Scala stdlib -->
                                                         <exclude>org.scala-lang.modules:scala-collection-compat_2.13</exclude>
                                                         <exclude>org.scala-lang:scala-library</exclude>
@@ -172,9 +170,7 @@
                                                         <exclude>io.grpc:grpc-stub</exclude>
                                                         <exclude>io.grpc:grpc-api</exclude>
                                                         <exclude>com.google.protobuf:protobuf-java</exclude>
-                                                        <exclude>com.google.protobuf:protobuf-java-util</exclude>
                                                         <!-- guava and related -->
-                                                        <exclude>com.google.code.gson:gson</exclude>
                                                         <exclude>com.google.guava:guava</exclude>
                                                         <exclude>com.google.guava:failureaccess</exclude>
                                                         <exclude>com.google.guava:listenablefuture</exclude>
@@ -313,7 +309,7 @@
                     <artifactId>exec-maven-plugin</artifactId>
                     <version>3.4.1</version>
                     <configuration>
-                        <mainClass>kalix.runtime.KalixRuntimeMain</mainClass>
+                        <mainClass>kalix.runtime.AkkaRuntimeMain</mainClass>
                         <systemProperties>
                             <systemProperty>
                                 <key>akka.javasdk.dev-mode.enabled</key>
@@ -348,7 +344,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
             </plugin>
-            
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
@@ -393,7 +389,7 @@
                                 </goals>
                                 <configuration>
                                     <source>
-                                        log.warn('The 'it' profile is deprecated. It will be removed in future versions. Integration tests only need `mvn integration-test` to run.')
+                                        log.warn('The 'it' profile is deprecated. It will be removed in future versions. Integration tests only need `mvn verify` to run.')
                                     </source>
                                 </configuration>
                             </execution>

@@ -4,13 +4,15 @@
 
 package akkajavasdk;
 
-import akka.javasdk.http.StrictResponse;
+import akka.javasdk.testkit.TestKit;
 import akka.javasdk.testkit.TestKitSupport;
 import akkajavasdk.components.eventsourcedentities.counter.Counter;
+import akkajavasdk.components.eventsourcedentities.counter.CounterCommand;
 import akkajavasdk.components.eventsourcedentities.counter.CounterEntity;
 import akka.javasdk.client.EventSourcedEntityClient;
 import akkajavasdk.components.eventsourcedentities.hierarchy.AbstractTextConsumer;
 import akkajavasdk.components.eventsourcedentities.hierarchy.TextEsEntity;
+import com.typesafe.config.ConfigFactory;
 import org.awaitility.Awaitility;
 import org.hamcrest.core.IsEqual;
 import org.junit.jupiter.api.Assertions;
@@ -24,14 +26,21 @@ import java.util.concurrent.TimeUnit;
 
 import static java.time.temporal.ChronoUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.fail;
 
 @ExtendWith(Junit5LogCapturing.class)
 public class EventSourcedEntityTest extends TestKitSupport {
 
+  @Override
+  protected TestKit.Settings testKitSettings() {
+    return TestKit.Settings.DEFAULT.withAdditionalConfig(ConfigFactory.parseString("""
+        akka.javasdk.event-sourced-entity.snapshot-every = 10
+        """));
+  }
+
   @Test
   public void verifyCounterEventSourcedWiring() {
-
     var counterId = "hello";
     var client = componentClient.forEventSourcedEntity(counterId);
 
@@ -46,23 +55,26 @@ public class EventSourcedEntityTest extends TestKitSupport {
   }
 
   @Test
+  public void verifyCounterEventSourcedDeletion() {
+    var counterId = "deleted-hello";
+    var client = componentClient.forEventSourcedEntity(counterId);
+
+    var isDeleted = await(client.method(CounterEntity::getDeleted).invokeAsync());
+    assertThat(isDeleted).isFalse();
+
+    await(client.method(CounterEntity::delete).invokeAsync());
+
+    var isDeleted2 = await(client.method(CounterEntity::getDeleted).invokeAsync());
+    assertThat(isDeleted2).isTrue();
+  }
+
+  @Test
   public void verifyCounterErrorEffect() {
-
-    CompletableFuture<StrictResponse<String>> call = httpClient.POST("/akka/v1.0/entity/counter-entity/c001/increaseWithError")
-      .withRequestBody(-10)
-      .responseBodyAs(String.class)
-      .invokeAsync()
-      .toCompletableFuture();
-
-    Awaitility.await()
-      .ignoreExceptions()
-      .atMost(5, TimeUnit.SECONDS)
-      .untilAsserted(() -> {
-
-        assertThat(call).isCompletedExceptionally();
-        assertThat(call.exceptionNow()).isInstanceOf(IllegalArgumentException.class);
-        assertThat(call.exceptionNow().getMessage()).contains("Value must be greater than 0");
-      });
+    var counterId = "hello-error";
+    var client = componentClient.forEventSourcedEntity(counterId);
+    assertThrows(IllegalArgumentException.class, () ->
+    increaseCounterWithError(client, -1)
+      );
   }
 
   @Test
@@ -133,7 +145,7 @@ public class EventSourcedEntityTest extends TestKitSupport {
   @Test
   public void verifyCounterEventSourcedAfterRestartFromSnapshot() {
 
-    // snapshotting with kalix.event-sourced-entity.snapshot-every = 10
+    // snapshotting with akka.javasdk.event-sourced-entity.snapshot-every = 10
     var counterId = "restartFromSnapshot";
     var client = componentClient.forEventSourcedEntity(counterId);
 
@@ -153,6 +165,24 @@ public class EventSourcedEntityTest extends TestKitSupport {
       .until(
         () -> getCounter(client),
         new IsEqual(10));
+  }
+
+  @Test
+  public void verifyRequestWithSealedCommand() {
+    var client = componentClient.forEventSourcedEntity("counter-with-sealed-command-handler");
+    await(client
+      .method(CounterEntity::handle)
+      .invokeAsync(new CounterCommand.Set(123)));
+
+    Integer result1 = await(client.method(CounterEntity::get).invokeAsync());
+    assertThat(result1).isEqualTo(123);
+
+    await(client
+      .method(CounterEntity::handle)
+      .invokeAsync(new CounterCommand.Increase(123)));
+
+    Integer result2 = await(client.method(CounterEntity::get).invokeAsync());
+    assertThat(result2).isEqualTo(246);
   }
 
   @Test
@@ -185,6 +215,12 @@ public class EventSourcedEntityTest extends TestKitSupport {
       .invokeAsync(value));
   }
 
+  private Counter increaseCounterWithError(EventSourcedEntityClient client, int value) {
+    return await(client
+        .method(CounterEntity::increaseWithError)
+        .invokeAsync(value));
+  }
+
 
   private Integer multiplyCounter(EventSourcedEntityClient client, int value) {
     return await(client
@@ -204,5 +240,4 @@ public class EventSourcedEntityTest extends TestKitSupport {
   private Integer getCounter(EventSourcedEntityClient client) {
     return await(client.method(CounterEntity::get).invokeAsync());
   }
-
 }

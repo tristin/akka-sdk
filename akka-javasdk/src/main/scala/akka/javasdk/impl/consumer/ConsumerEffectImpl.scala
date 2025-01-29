@@ -20,38 +20,35 @@ import akka.javasdk.consumer.Consumer
 private[impl] object ConsumerEffectImpl {
   sealed abstract class PrimaryEffect extends Consumer.Effect {}
 
-  final case class ReplyEffect[T](msg: T, metadata: Option[Metadata]) extends PrimaryEffect {
-    def isEmpty: Boolean = false
-  }
+  final case class ProduceEffect[T](msg: T, metadata: Option[Metadata]) extends PrimaryEffect {}
 
-  final case class AsyncEffect(effect: Future[Consumer.Effect]) extends PrimaryEffect {
-    def isEmpty: Boolean = false
-  }
+  case object ConsumedEffect extends PrimaryEffect {}
 
-  case object IgnoreEffect extends PrimaryEffect {
-    def isEmpty: Boolean = true
-  }
+  final case class AsyncEffect(effect: Future[Consumer.Effect]) extends PrimaryEffect {}
 
   object Builder extends Consumer.Effect.Builder {
-    def produce[S](message: S): Consumer.Effect = ReplyEffect(message, None)
+    def produce[S](message: S): Consumer.Effect = ProduceEffect(message, None)
 
     def produce[S](message: S, metadata: Metadata): Consumer.Effect =
-      ReplyEffect(message, Some(metadata))
+      ProduceEffect(message, Some(metadata))
 
     def asyncProduce[S](futureMessage: CompletionStage[S]): Consumer.Effect =
       asyncProduce(futureMessage, Metadata.EMPTY)
+
     def asyncProduce[S](futureMessage: CompletionStage[S], metadata: Metadata): Consumer.Effect =
       AsyncEffect(futureMessage.asScala.map(s => Builder.produce[S](s, metadata))(ExecutionContext.parasitic))
+
     def asyncEffect(futureEffect: CompletionStage[Consumer.Effect]): Consumer.Effect =
       AsyncEffect(futureEffect.asScala)
+
     def ignore(): Consumer.Effect =
-      IgnoreEffect
+      ConsumedEffect
 
     override def done(): Consumer.Effect =
-      ReplyEffect(Done, None)
+      ConsumedEffect
 
     override def asyncDone(futureMessage: CompletionStage[Done]): Consumer.Effect =
-      AsyncEffect(futureMessage.asScala.map(done => Builder.produce(done))(ExecutionContext.parasitic))
+      AsyncEffect(futureMessage.asScala.map(_ => this.done())(ExecutionContext.parasitic))
   }
 
   def builder(): Consumer.Effect.Builder = Builder

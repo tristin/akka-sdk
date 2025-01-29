@@ -13,7 +13,6 @@ import akka.javasdk.impl.effect.SecondaryEffectImpl
 import akka.javasdk.keyvalueentity.KeyValueEntity.Effect
 import akka.javasdk.keyvalueentity.KeyValueEntity.Effect.Builder
 import akka.javasdk.keyvalueentity.KeyValueEntity.Effect.OnSuccessBuilder
-import io.grpc.Status
 
 /**
  * INTERNAL API
@@ -59,12 +58,12 @@ private[javasdk] final class KeyValueEntityEffectImpl[S] extends Builder[S] with
   }
 
   override def error[T](description: String): KeyValueEntityEffectImpl[T] = {
-    _secondaryEffect = ErrorReplyImpl(description, Some(Status.Code.INVALID_ARGUMENT))
+    _secondaryEffect = ErrorReplyImpl(description)
     this.asInstanceOf[KeyValueEntityEffectImpl[T]]
   }
 
   def hasError(): Boolean =
-    _secondaryEffect.isInstanceOf[ErrorReplyImpl[_]]
+    _secondaryEffect.isInstanceOf[ErrorReplyImpl]
 
   override def thenReply[T](message: T): KeyValueEntityEffectImpl[T] =
     thenReply(message, Metadata.EMPTY)

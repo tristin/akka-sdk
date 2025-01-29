@@ -4,16 +4,14 @@
 
 package akka.javasdk.impl
 
-import akka.javasdk.impl.ValidationException
-import NotPublicComponents.NotPublicAction
-import akka.javasdk.impl.ProtoDescriptorGenerator.fileDescriptorName
-import akka.javasdk.impl.Validations
+import akka.javasdk.impl.NotPublicComponents.NotPublicAction
+import akka.javasdk.impl.serialization.JsonSerializer
 import akka.javasdk.testmodels.action.ActionsTestModels.ActionWithOneParam
 import akka.javasdk.testmodels.action.ActionsTestModels.ActionWithoutParam
-import com.google.protobuf.Descriptors.FieldDescriptor.JavaType
+import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
-class TimedActionDescriptorFactorySpec extends AnyWordSpec with ComponentDescriptorSuite {
+class TimedActionDescriptorFactorySpec extends AnyWordSpec with Matchers {
 
   "Action descriptor factory" should {
 
@@ -24,30 +22,13 @@ class TimedActionDescriptorFactorySpec extends AnyWordSpec with ComponentDescrip
     }
 
     "generate mappings for an Action with method without path param" in {
-      assertDescriptor[ActionWithoutParam] { desc =>
-
-        val clazz = classOf[ActionWithoutParam]
-        desc.fileDescriptor.getName shouldBe fileDescriptorName(clazz.getPackageName, clazz.getSimpleName)
-
-        val methodDescriptor = desc.serviceDescriptor.findMethodByName("Message")
-        methodDescriptor.isServerStreaming shouldBe false
-        methodDescriptor.isClientStreaming shouldBe false
-
-        val method = desc.commandHandlers("Message")
-        method.requestMessageDescriptor.getFields.size() shouldBe 0
-      }
+      val desc = ComponentDescriptor.descriptorFor(classOf[ActionWithoutParam], new JsonSerializer)
+      desc.methodInvokers should have size 1
     }
 
     "generate mappings for an Action with method with one param" in {
-      assertDescriptor[ActionWithOneParam] { desc =>
-
-        val methodDescriptor = desc.serviceDescriptor.findMethodByName("Message")
-        methodDescriptor.isServerStreaming shouldBe false
-        methodDescriptor.isClientStreaming shouldBe false
-
-        val method = desc.commandHandlers("Message")
-        assertRequestFieldJavaType(method, "json_body", JavaType.MESSAGE)
-      }
+      val desc = ComponentDescriptor.descriptorFor(classOf[ActionWithOneParam], new JsonSerializer)
+      desc.methodInvokers.get("Message") should not be empty
     }
   }
 

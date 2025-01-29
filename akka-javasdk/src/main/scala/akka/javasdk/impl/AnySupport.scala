@@ -6,10 +6,12 @@ package akka.javasdk.impl
 
 import java.io.ByteArrayOutputStream
 import java.util.Locale
+
 import scala.collection.concurrent.TrieMap
 import scala.jdk.CollectionConverters._
 import scala.reflect.ClassTag
 import scala.util.Try
+
 import com.google.common.base.CaseFormat
 import com.google.protobuf.ByteString
 import com.google.protobuf.CodedInputStream
@@ -28,7 +30,6 @@ import org.slf4j.LoggerFactory
 import scalapb.GeneratedMessage
 import scalapb.GeneratedMessageCompanion
 import scalapb.options.Scalapb
-
 import scala.collection.compat.immutable.ArraySeq
 
 /**
@@ -48,6 +49,8 @@ private[akka] object AnySupport {
 
   def isJson(any: ScalaPbAny): Boolean = isJsonTypeUrl(any.typeUrl)
 
+  def isJson(typeUrl: String): Boolean = isJsonTypeUrl(typeUrl)
+
   def isJsonTypeUrl(typeUrl: String): Boolean =
     // check both new and old typeurl for compatibility, in case there are services with old type url stored in database
     typeUrl.startsWith(JsonTypeUrlPrefix) || typeUrl.startsWith(KalixJsonTypeUrlPrefix)
@@ -55,9 +58,6 @@ private[akka] object AnySupport {
   def replaceLegacyJsonPrefix(typeUrl: String): String =
     if (typeUrl.startsWith(KalixJsonTypeUrlPrefix)) JsonTypeUrlPrefix + typeUrl.stripPrefix(KalixJsonTypeUrlPrefix)
     else typeUrl
-
-  def stripJsonTypeUrlPrefix(typeUrl: String): String =
-    typeUrl.stripPrefix(AnySupport.JsonTypeUrlPrefix).stripPrefix(KalixJsonTypeUrlPrefix)
 
   sealed abstract class Primitive[T: ClassTag] {
     val name = fieldType.name().toLowerCase(Locale.ROOT)
@@ -199,15 +199,13 @@ private[akka] object AnySupport {
       }
     }
 
-  def extractBytes(bytes: ByteString): ByteString = bytesToPrimitive(BytesPrimitive, bytes)
 }
 
 class AnySupport(
     descriptors: Array[Descriptors.FileDescriptor],
     classLoader: ClassLoader,
     typeUrlPrefix: String = AnySupport.DefaultTypeUrlPrefix,
-    prefer: AnySupport.Prefer = AnySupport.Prefer.Java)
-    extends MessageCodec {
+    prefer: AnySupport.Prefer = AnySupport.Prefer.Java) {
 
   import AnySupport._
   private val allDescriptors = flattenDescriptors(ArraySeq.unsafeWrapArray(descriptors))
@@ -333,15 +331,6 @@ class AnySupport(
           }
         })
       .get
-
-  def resolveServiceDescriptor(
-      serviceDescriptor: Descriptors.ServiceDescriptor): Map[String, ResolvedServiceMethod[_, _]] =
-    serviceDescriptor.getMethods.asScala.map { method =>
-      method.getName -> ResolvedServiceMethod(
-        method,
-        resolveTypeDescriptor(method.getInputType),
-        resolveTypeDescriptor(method.getOutputType))
-    }.toMap
 
   private def resolveTypeUrl(typeName: String): Option[ResolvedType[_]] =
     allTypes.get(typeName).map(resolveTypeDescriptor)
@@ -475,7 +464,7 @@ class AnySupport(
           try {
             parser.parseFrom(any.value)
           } catch {
-            case ex: scalapb.validate.FieldValidationException =>
+            case ex: Exception =>
               throw BadRequestException(ex.getMessage)
           }
         case None =>
@@ -484,7 +473,7 @@ class AnySupport(
     }
   }
 
-  override def typeUrlFor(clz: Class[_]): String = clz.getName
+  def typeUrlFor(clz: Class[_]): String = clz.getName
 }
 
 final case class SerializationException(msg: String, cause: Throwable = null) extends RuntimeException(msg, cause)
@@ -502,11 +491,4 @@ private[akka] object ByteStringEncoding {
   def decodePrimitiveBytes(bytes: ByteString): ByteString =
     AnySupport.decodePrimitiveBytes(bytes)
 
-}
-
-trait MessageCodec {
-  def decodeMessage(any: ScalaPbAny): Any
-  def encodeScala(value: Any): ScalaPbAny
-  def encodeJava(value: Any): JavaPbAny
-  def typeUrlFor(clz: Class[_]): String
 }

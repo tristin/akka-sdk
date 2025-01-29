@@ -6,6 +6,8 @@ package akka.javasdk.client;
 
 import akka.NotUsed;
 import akka.javasdk.impl.*;
+import akka.javasdk.impl.serialization.JsonSerializer;
+import akka.javasdk.impl.view.ViewDescriptorFactory;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.DynamicMessage;
@@ -16,8 +18,8 @@ import akka.javasdk.Metadata;
 import akka.javasdk.impl.client.ComponentClientImpl;
 import akka.javasdk.impl.client.DeferredCallImpl;
 import akka.javasdk.impl.telemetry.Telemetry;
-import akka.runtime.sdk.spi.ActionClient;
-import akka.runtime.sdk.spi.ActionType$;
+import akka.runtime.sdk.spi.TimedActionClient;
+import akka.runtime.sdk.spi.TimedActionType$;
 import akka.runtime.sdk.spi.ComponentClients;
 import akka.runtime.sdk.spi.EntityClient;
 import akka.runtime.sdk.spi.TimerClient;
@@ -40,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ComponentClientTest {
 
-  private final JsonMessageCodec messageCodec = new JsonMessageCodec();
+  private final JsonSerializer serializer = new JsonSerializer();
   private ComponentClientImpl componentClient;
 
   @BeforeEach
@@ -70,34 +72,28 @@ class ComponentClientTest {
       }
 
       @Override
-      public ActionClient actionClient() {
+      public TimedActionClient timedActionClient() {
         return null;
       }
     };
-    componentClient = new ComponentClientImpl(dummyComponentClients, Option.empty(), ExecutionContext.global());
+    componentClient = new ComponentClientImpl(dummyComponentClients, serializer, Option.empty(), ExecutionContext.global());
   }
 
   @Test
-  public void shouldReturnDeferredCallForCallWithNoParameter() throws InvalidProtocolBufferException {
+  public void shouldReturnDeferredCallForCallWithNoParameter() {
     //given
-    var action = descriptorFor(ActionWithoutParam.class, messageCodec);
-    var targetMethod = action.serviceDescriptor().findMethodByName("Message");
-
     //when
     DeferredCallImpl<NotUsed, Object> call = (DeferredCallImpl<NotUsed, Object>) componentClient.forTimedAction()
       .method(ActionWithoutParam::message)
       .deferred();
 
     //then
-    assertEquals(call.componentType(), ActionType$.MODULE$);
+    assertEquals(call.componentType(), TimedActionType$.MODULE$);
   }
 
   @Test
-  public void shouldReturnDeferredCallForCallWithOneParameter() throws InvalidProtocolBufferException {
+  public void shouldReturnDeferredCallForCallWithOneParameter() {
     //given
-    var action = descriptorFor(ActionWithoutParam.class, messageCodec);
-    var targetMethod = action.serviceDescriptor().findMethodByName("Message");
-
     //when
     DeferredCallImpl<String, Object> call = (DeferredCallImpl<String, Object>)
             componentClient.forTimedAction()
@@ -111,7 +107,7 @@ class ComponentClientTest {
   @Test
   public void shouldReturnDeferredCallWithTraceParent() {
     //given
-    var action = descriptorFor(ActionWithoutParam.class, messageCodec);
+    var action = descriptorFor(ActionWithoutParam.class, serializer);
     String traceparent = "074c4c8d-d87c-4573-847f-77951ce4e0a4";
     Metadata metadata = MetadataImpl.Empty().set(Telemetry.TRACE_PARENT_KEY(), traceparent);
     //when
@@ -128,11 +124,9 @@ class ComponentClientTest {
   @Test
   public void shouldReturnDeferredCallForValueEntity() throws InvalidProtocolBufferException {
     //given
-    var counterVE = descriptorFor(Counter.class, messageCodec);
-    var targetMethod = counterVE.serviceDescriptor().findMethodByName("RandomIncrease");
     Integer param = 10;
-
     var id = "abc123";
+
     //when
     DeferredCallImpl<Integer, Number> call = (DeferredCallImpl<Integer, Number>)
       componentClient.forKeyValueEntity(id)
@@ -141,17 +135,14 @@ class ComponentClientTest {
 
     //then
     assertThat(call.componentId()).isEqualTo(ComponentDescriptorFactory.readComponentIdIdValue(Counter.class));
-    assertThat(call.methodName()).isEqualTo(targetMethod.getName());
     assertEquals(10, call.message());
   }
 
 
 
   @Test
-  public void shouldReturnNonDeferrableCallForViewRequest() throws InvalidProtocolBufferException {
+  public void shouldReturnNonDeferrableCallForViewRequest() {
     //given
-    var view = descriptorFor(UserByEmailWithGet.class, messageCodec);
-    var targetMethod = view.serviceDescriptor().findMethodByName("GetUser");
     String email = "email@example.com";
 
     ViewTestModels.ByEmail body = new ViewTestModels.ByEmail(email);
@@ -164,9 +155,9 @@ class ComponentClientTest {
 
   }
 
-  private ComponentDescriptor descriptorFor(Class<?> clazz, JsonMessageCodec messageCodec) {
+  private ComponentDescriptor descriptorFor(Class<?> clazz, JsonSerializer serializer) {
     Validations.validate(clazz).failIfInvalid();
-    return ComponentDescriptor.descriptorFor(clazz, messageCodec);
+    return ComponentDescriptor.descriptorFor(clazz, serializer);
   }
 
   private <T> T getBody(Descriptors.MethodDescriptor targetMethod, Any message, Class<T> clazz) throws InvalidProtocolBufferException {

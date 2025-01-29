@@ -4,18 +4,13 @@
 
 package akka.javasdk.impl
 
-import akka.annotation.InternalApi
-import akka.javasdk.annotations.Acl
-import akka.javasdk.annotations.ComponentId
-import akka.javasdk.eventsourcedentity.EventSourcedEntity
-import akka.javasdk.impl.reflection.CombinedSubscriptionServiceMethod
-import akka.javasdk.impl.reflection.KalixMethod
-import akka.javasdk.impl.reflection.NameGenerator
-import akka.javasdk.impl.reflection.Reflect
 import java.lang.reflect.AnnotatedElement
 import java.lang.reflect.Method
 import java.lang.reflect.ParameterizedType
 
+import akka.annotation.InternalApi
+import akka.javasdk.annotations.Acl
+import akka.javasdk.annotations.ComponentId
 import akka.javasdk.annotations.Consume.FromEventSourcedEntity
 import akka.javasdk.annotations.Consume.FromKeyValueEntity
 import akka.javasdk.annotations.Consume.FromServiceStream
@@ -24,23 +19,17 @@ import akka.javasdk.annotations.DeleteHandler
 import akka.javasdk.annotations.Produce.ServiceStream
 import akka.javasdk.annotations.Produce.ToTopic
 import akka.javasdk.consumer.Consumer
-import akka.javasdk.impl.view.ViewDescriptorFactory
+import akka.javasdk.eventsourcedentity.EventSourcedEntity
+import akka.javasdk.impl.reflection.Reflect
+import akka.javasdk.impl.serialization.JsonSerializer
 import akka.javasdk.keyvalueentity.KeyValueEntity
 import akka.javasdk.timedaction.TimedAction
 import akka.javasdk.view.TableUpdater
 import akka.javasdk.view.View
 import akka.javasdk.workflow.Workflow
-import kalix.DirectDestination
-import kalix.DirectSource
-import kalix.EventDestination
-import kalix.EventSource
-import kalix.Eventing
-import kalix.MethodOptions
-import kalix.ServiceEventing
-import kalix.ServiceEventingOut
-import kalix.ServiceOptions
-// TODO: abstract away spring dependency
-import Reflect.Syntax._
+import akka.runtime.sdk.spi.ConsumerDestination
+import akka.runtime.sdk.spi.ConsumerSource
+import akka.javasdk.impl.reflection.Reflect.Syntax._
 
 /**
  * INTERNAL API
@@ -69,9 +58,6 @@ private[impl] object ComponentDescriptorFactory {
 
   def eventSourcedEntitySubscription(clazz: Class[_]): Option[FromEventSourcedEntity] =
     clazz.getAnnotationOption[FromEventSourcedEntity]
-
-  def topicSubscription(clazz: Class[_]): Option[FromTopic] =
-    clazz.getAnnotationOption[FromTopic]
 
   def hasConsumerOutput(javaMethod: Method): Boolean = {
     if (javaMethod.isPublic) {
@@ -129,6 +115,9 @@ private[impl] object ComponentDescriptorFactory {
 
   def hasTopicPublication(clazz: Class[_]): Boolean =
     clazz.hasAnnotation[ToTopic]
+
+  def hasStreamPublication(clazz: Class[_]): Boolean =
+    clazz.hasAnnotation[ServiceStream]
 
   def readComponentIdIdValue(annotated: AnnotatedElement): String = {
     val annotation = annotated.getAnnotation(classOf[ComponentId])
@@ -198,121 +187,34 @@ private[impl] object ComponentDescriptorFactory {
     else false
   }
 
-  def valueEntityEventSource(clazz: Class[_], handleDeletes: Boolean) = {
-    val entityType = findValueEntityType(clazz)
-    EventSource
-      .newBuilder()
-      .setValueEntity(entityType)
-      .setHandleDeletes(handleDeletes)
-      .build()
+  def consumerSource(clazz: Class[_]): ConsumerSource = {
+    if (hasValueEntitySubscription(clazz)) {
+      val kveType = findValueEntityType(clazz)
+      new ConsumerSource.KeyValueEntitySource(kveType)
+    } else if (hasEventSourcedEntitySubscription(clazz)) {
+      val esType = findEventSourcedEntityType(clazz)
+      new ConsumerSource.EventSourcedEntitySource(esType)
+    } else if (hasTopicSubscription(clazz)) {
+      val topicName = findSubscriptionTopicName(clazz)
+      val consumerGroup = findSubscriptionConsumerGroup(clazz)
+      new ConsumerSource.TopicSource(topicName, consumerGroup)
+    } else if (hasStreamSubscription(clazz)) {
+      val streamAnn = streamSubscription(clazz).get
+      new ConsumerSource.ServiceStreamSource(streamAnn.service(), streamAnn.id(), streamAnn.consumerGroup())
+    } else {
+      throw new IllegalArgumentException(s"Component [$clazz] is missing a @Consume annotation")
+    }
   }
 
-  def topicEventDestination(clazz: Class[_]): Option[EventDestination] = {
+  def consumerDestination(clazz: Class[Consumer]): Option[ConsumerDestination] = {
     if (hasTopicPublication(clazz)) {
       val topicName = findPublicationTopicName(clazz)
-      Some(EventDestination.newBuilder().setTopic(topicName).build())
+      Some(new ConsumerDestination.TopicDestination(topicName))
+    } else if (hasStreamPublication(clazz)) {
+      val streamAnn = clazz.getAnnotation(classOf[ServiceStream])
+      Some(new ConsumerDestination.ServiceStreamDestination(streamAnn.id()))
     } else {
       None
-    }
-  }
-
-  def eventingInForEventSourcedEntity(clazz: Class[_]): Eventing = {
-    val entityType = findEventSourcedEntityType(clazz)
-    val eventSource = EventSource.newBuilder().setEventSourcedEntity(entityType).build()
-    Eventing.newBuilder().setIn(eventSource).build()
-  }
-
-  def eventingInForTopic(clazz: Class[_]): Eventing = {
-    Eventing.newBuilder().setIn(topicEventSource(clazz)).build()
-  }
-
-  def eventingInForEventSourcedEntityServiceLevel(clazz: Class[_]): Option[kalix.ServiceOptions] = {
-    eventSourcedEntitySubscription(clazz).map { _ =>
-      val entityType = findEventSourcedEntityType(clazz)
-      val in = EventSource.newBuilder().setEventSourcedEntity(entityType)
-      val eventing = ServiceEventing.newBuilder().setIn(in)
-      kalix.ServiceOptions.newBuilder().setEventing(eventing).build()
-    }
-  }
-
-  def eventingInForTopicServiceLevel(clazz: Class[_]): Option[kalix.ServiceOptions] = {
-    topicSubscription(clazz).map { ann =>
-      val in = EventSource.newBuilder().setTopic(ann.value()).setConsumerGroup(ann.consumerGroup())
-      val eventing = ServiceEventing.newBuilder().setIn(in)
-      kalix.ServiceOptions.newBuilder().setEventing(eventing).build()
-    }
-  }
-
-  def topicEventSource(javaMethod: Method): EventSource = {
-    val topicName = findSubscriptionTopicName(javaMethod)
-    val consumerGroup = findSubscriptionConsumerGroup(javaMethod)
-    EventSource.newBuilder().setTopic(topicName).setConsumerGroup(consumerGroup).build()
-  }
-
-  def topicEventSource(clazz: Class[_]): EventSource = {
-    val topicName = findSubscriptionTopicName(clazz)
-    val consumerGroup = findSubscriptionConsumerGroup(clazz)
-    EventSource.newBuilder().setTopic(topicName).setConsumerGroup(consumerGroup).build()
-  }
-
-  def eventingOutForTopic(clazz: Class[_]): Option[Eventing] = {
-    topicEventDestination(clazz).map(eventSource => Eventing.newBuilder().setOut(eventSource).build())
-  }
-
-  def eventingInForValueEntity(clazz: Class[_], handleDeletes: Boolean): Eventing = {
-    val entityType = findValueEntityType(clazz)
-    val eventSource = EventSource
-      .newBuilder()
-      .setValueEntity(entityType)
-      .setHandleDeletes(handleDeletes)
-      .build()
-    Eventing.newBuilder().setIn(eventSource).build()
-  }
-
-  def subscribeToEventStream(component: Class[_]): Option[kalix.ServiceOptions] = {
-    Option(component.getAnnotation(classOf[FromServiceStream])).map { streamAnn =>
-      val direct = DirectSource
-        .newBuilder()
-        .setEventStreamId(streamAnn.id())
-        .setService(streamAnn.service())
-
-      val in = EventSource
-        .newBuilder()
-        .setDirect(direct)
-        .setConsumerGroup(streamAnn.consumerGroup())
-
-      val eventing =
-        ServiceEventing
-          .newBuilder()
-          .setIn(in)
-
-      kalix.ServiceOptions
-        .newBuilder()
-        .setEventing(eventing)
-        .build()
-    }
-  }
-
-  def publishToEventStream(component: Class[_]): Option[kalix.ServiceOptions] = {
-    Option(component.getAnnotation(classOf[ServiceStream])).map { streamAnn =>
-
-      val direct = DirectDestination
-        .newBuilder()
-        .setEventStreamId(streamAnn.id())
-
-      val out = ServiceEventingOut
-        .newBuilder()
-        .setDirect(direct)
-
-      val eventing =
-        ServiceEventing
-          .newBuilder()
-          .setOut(out)
-
-      kalix.ServiceOptions
-        .newBuilder()
-        .setEventing(eventing)
-        .build()
     }
   }
 
@@ -322,107 +224,10 @@ private[impl] object ComponentDescriptorFactory {
   def getFactoryFor(component: Class[_]): ComponentDescriptorFactory = {
     if (Reflect.isEntity(component) || Reflect.isWorkflow(component))
       EntityDescriptorFactory
-    else if (Reflect.isView(component))
-      ViewDescriptorFactory
     else if (Reflect.isConsumer(component))
       ConsumerDescriptorFactory
     else
-      ActionDescriptorFactory
-  }
-
-  def combineByES(
-      subscriptions: Seq[KalixMethod],
-      messageCodec: JsonMessageCodec,
-      component: Class[_]): Seq[KalixMethod] = {
-
-    def groupByES(methods: Seq[KalixMethod]): Map[String, Seq[KalixMethod]] = {
-      val withEventSourcedIn = methods.filter(kalixMethod =>
-        kalixMethod.methodOptions.exists(option =>
-          option.hasEventing && option.getEventing.hasIn && option.getEventing.getIn.hasEventSourcedEntity))
-      //Assuming there is only one eventing.in annotation per method, therefore head is as good as any other
-      withEventSourcedIn.groupBy(m => m.methodOptions.head.getEventing.getIn.getEventSourcedEntity)
-    }
-
-    combineBy("ES", groupByES(subscriptions), messageCodec, component)
-  }
-
-  def combineByTopic(
-      kalixMethods: Seq[KalixMethod],
-      messageCodec: JsonMessageCodec,
-      component: Class[_]): Seq[KalixMethod] = {
-    def groupByTopic(methods: Seq[KalixMethod]): Map[String, Seq[KalixMethod]] = {
-      val withTopicIn = methods.filter(kalixMethod =>
-        kalixMethod.methodOptions.exists(option =>
-          option.hasEventing && option.getEventing.hasIn && option.getEventing.getIn.hasTopic))
-      //Assuming there is only one topic annotation per method, therefore head is as good as any other
-      withTopicIn.groupBy(m => m.methodOptions.head.getEventing.getIn.getTopic)
-    }
-
-    combineBy("Topic", groupByTopic(kalixMethods), messageCodec, component)
-  }
-
-  def combineBy(
-      sourceName: String,
-      groupedSubscriptions: Map[String, Seq[KalixMethod]],
-      messageCodec: JsonMessageCodec,
-      component: Class[_]): Seq[KalixMethod] = {
-
-    groupedSubscriptions.collect {
-      case (source, kMethods) if kMethods.size > 1 =>
-        val methodsMap =
-          kMethods.flatMap { k =>
-            val methodParameterTypes = k.serviceMethod.javaMethodOpt.get.getParameterTypes
-            // it is safe to pick the last parameter. An action has one and View has two. In the View always the last is the event
-            val eventParameter = methodParameterTypes.last
-
-            messageCodec.typeUrlsFor(eventParameter).map(typeUrl => (typeUrl, k.serviceMethod.javaMethodOpt.get))
-          }.toMap
-
-        KalixMethod(
-          CombinedSubscriptionServiceMethod(
-            component.getName,
-            "KalixSyntheticMethodOn" + sourceName + escapeMethodName(source.capitalize),
-            methodsMap))
-          .withKalixOptions(kMethods.head.methodOptions)
-
-      case (source, kMethod +: Nil) =>
-        //only here it makes sense to check if the input is sealed, since kMethod size is 1
-        if (kMethod.serviceMethod.javaMethodOpt.exists(_.getParameterTypes.last.isSealed)) {
-          val javaMethod = kMethod.serviceMethod.javaMethodOpt.get
-          val methodsMap = javaMethod.getParameterTypes.last.getPermittedSubclasses.toList.flatMap { subClass =>
-            messageCodec.typeUrlsFor(subClass).map(typeUrl => (typeUrl, javaMethod))
-          }.toMap
-          KalixMethod(
-            CombinedSubscriptionServiceMethod(
-              component.getName,
-              "KalixSyntheticMethodOn" + sourceName + escapeMethodName(source.capitalize),
-              methodsMap))
-            .withKalixOptions(kMethod.methodOptions)
-        } else {
-          kMethod
-        }
-    }.toSeq
-  }
-
-  private[impl] def escapeMethodName(value: String): String = {
-    value.replaceAll("[\\._\\-]", "")
-  }
-
-  private[impl] def buildEventingOutOptions(clazz: Class[_]): Option[MethodOptions] =
-    eventingOutForTopic(clazz)
-      .map(eventingOut => kalix.MethodOptions.newBuilder().setEventing(eventingOut).build())
-
-  def mergeServiceOptions(allOptions: Option[kalix.ServiceOptions]*): Option[ServiceOptions] = {
-    val mergedOptions =
-      allOptions.flatten
-        .foldLeft(kalix.ServiceOptions.newBuilder()) { case (builder, serviceOptions) =>
-          builder.mergeFrom(serviceOptions)
-        }
-        .build()
-
-    // if builder produces the default one, we can returns a None
-    if (mergedOptions == kalix.ServiceOptions.getDefaultInstance) None
-    else Some(mergedOptions)
+      TimedActionDescriptorFactory
   }
 }
 
@@ -431,10 +236,7 @@ private[impl] trait ComponentDescriptorFactory {
   /**
    * Inspect the component class (type), validate the annotations/methods and build a component descriptor for it.
    */
-  def buildDescriptorFor(
-      componentClass: Class[_],
-      messageCodec: JsonMessageCodec,
-      nameGenerator: NameGenerator): ComponentDescriptor
+  def buildDescriptorFor(componentClass: Class[_], serializer: JsonSerializer): ComponentDescriptor
 
 }
 

@@ -14,7 +14,6 @@ import akka.http.scaladsl.model.HttpResponse
 import akka.javasdk.JsonSupport
 import akka.javasdk.Metadata.{ MetadataEntry => SdkMetadataEntry }
 import akka.javasdk.impl.AnySupport
-import akka.javasdk.impl.MessageCodec
 import akka.javasdk.impl.MetadataImpl
 import akka.javasdk.testkit.EventingTestKit
 import akka.javasdk.testkit.EventingTestKit.IncomingMessages
@@ -50,11 +49,12 @@ import kalix.testkit.protocol.eventing_test_backend.RunSourceCreate
 import kalix.testkit.protocol.eventing_test_backend.SourceElem
 import org.slf4j.LoggerFactory
 import scalapb.GeneratedMessage
-
 import java.time
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.{ List => JList }
+
+import scala.annotation.nowarn
 import scala.jdk.CollectionConverters._
 import scala.jdk.DurationConverters._
 import scala.jdk.OptionConverters._
@@ -66,6 +66,10 @@ import scala.concurrent.duration._
 import scala.util.Failure
 import scala.util.Success
 
+import akka.javasdk.impl.serialization.JsonSerializer
+import akka.runtime.sdk.spi.SpiMetadata
+import akka.runtime.sdk.spi.SpiMetadataEntry
+
 object EventingTestKitImpl {
 
   /**
@@ -75,10 +79,10 @@ object EventingTestKitImpl {
    * The returned testkit can be used to expect and emit events to the proxy as if they came from an actual pub/sub
    * event backend.
    */
-  def start(system: ActorSystem[_], host: String, port: Int, decoder: MessageCodec): EventingTestKit = {
+  def start(system: ActorSystem[_], host: String, port: Int, serializer: JsonSerializer): EventingTestKit = {
 
     // Create service handlers
-    val service = new EventingTestServiceImpl(system, host, port, decoder)
+    val service = new EventingTestServiceImpl(system, host, port, serializer)
     val handler: HttpRequest => Future[HttpResponse] =
       EventingTestKitServiceHandler(new service.ServiceImpl)(system)
 
@@ -117,7 +121,9 @@ object EventingTestKitImpl {
         if (sdkMetadataEntry.isText) {
           mde.withStringValue(sdkMetadataEntry.getValue)
         } else {
-          mde.withBytesValue(ByteString.copyFrom(sdkMetadataEntry.getBinaryValue))
+          @nowarn("msg=deprecated")
+          val binary = sdkMetadataEntry.getBinaryValue;
+          mde.withBytesValue(ByteString.copyFrom(binary))
         }
       }
 
@@ -134,13 +140,28 @@ object EventingTestKitImpl {
     }
 
   }
+
+  def metadataToSpi(metadata: Option[Metadata]): SpiMetadata =
+    metadata.map(metadataToSpi).getOrElse(SpiMetadata.empty)
+
+  def metadataToSpi(metadata: Metadata): SpiMetadata = {
+    import kalix.protocol.component.MetadataEntry.Value
+    val entries = metadata.entries.map(entry =>
+      entry.value match {
+        case Value.Empty              => new SpiMetadataEntry(entry.key, "")
+        case Value.StringValue(value) => new SpiMetadataEntry(entry.key, value)
+        case Value.BytesValue(value) =>
+          new SpiMetadataEntry(entry.key, value.toStringUtf8) //FIXME binary not supported
+      })
+    new SpiMetadata(entries)
+  }
 }
 
 /**
  * Implements the EventingTestKit protocol originally defined in proxy
  * protocols/testkit/src/main/protobuf/eventing_test_backend.proto
  */
-final class EventingTestServiceImpl(system: ActorSystem[_], val host: String, var port: Int, codec: MessageCodec)
+final class EventingTestServiceImpl(system: ActorSystem[_], val host: String, var port: Int, serializer: JsonSerializer)
     extends EventingTestKit {
 
   private val log = LoggerFactory.getLogger(classOf[EventingTestServiceImpl])
@@ -159,12 +180,12 @@ final class EventingTestServiceImpl(system: ActorSystem[_], val host: String, va
   private def getTopicIncomingMessagesImpl(topic: String): IncomingMessagesImpl =
     topicSubscriptions.computeIfAbsent(
       topic,
-      _ => new IncomingMessagesImpl(sys.actorOf(Props[SourcesHolder](), "topic-holder-" + topic), codec))
+      _ => new IncomingMessagesImpl(sys.actorOf(Props[SourcesHolder](), "topic-holder-" + topic), serializer))
 
   override def getTopicOutgoingMessages(topic: String): OutgoingMessages = getTopicOutgoingMessagesImpl(topic)
 
   private def getTopicOutgoingMessagesImpl(topic: String): OutgoingMessagesImpl =
-    topicDestinations.computeIfAbsent(topic, _ => new OutgoingMessagesImpl(TestProbe(), codec))
+    topicDestinations.computeIfAbsent(topic, _ => new OutgoingMessagesImpl(TestProbe(), serializer))
 
   override def getKeyValueEntityIncomingMessages(typeId: String): IncomingMessages = getValueEntityIncomingMessagesImpl(
     typeId)
@@ -172,7 +193,7 @@ final class EventingTestServiceImpl(system: ActorSystem[_], val host: String, va
   private def getValueEntityIncomingMessagesImpl(typeId: String): VeIncomingMessagesImpl =
     veSubscriptions.computeIfAbsent(
       typeId,
-      _ => new VeIncomingMessagesImpl(sys.actorOf(Props[SourcesHolder](), "ve-holder-" + typeId), codec))
+      _ => new VeIncomingMessagesImpl(sys.actorOf(Props[SourcesHolder](), "ve-holder-" + typeId), serializer))
 
   override def getEventSourcedEntityIncomingMessages(typeId: String): IncomingMessages =
     getEventSourcedSubscriptionImpl(typeId)
@@ -180,7 +201,7 @@ final class EventingTestServiceImpl(system: ActorSystem[_], val host: String, va
   private def getEventSourcedSubscriptionImpl(typeId: String): IncomingMessagesImpl =
     esSubscriptions.computeIfAbsent(
       typeId,
-      _ => new IncomingMessagesImpl(sys.actorOf(Props[SourcesHolder](), "es-holder-" + typeId), codec))
+      _ => new IncomingMessagesImpl(sys.actorOf(Props[SourcesHolder](), "es-holder-" + typeId), serializer))
 
   override def getStreamIncomingMessages(service: String, streamId: String): IncomingMessages =
     getStreamIncomingMessagesImpl(service, streamId)
@@ -188,7 +209,8 @@ final class EventingTestServiceImpl(system: ActorSystem[_], val host: String, va
   private def getStreamIncomingMessagesImpl(service: String, streamId: String): IncomingMessagesImpl =
     streamSubscriptions.computeIfAbsent(
       service + "/" + streamId,
-      _ => new IncomingMessagesImpl(sys.actorOf(Props[SourcesHolder](), s"stream-holder-$service-$streamId"), codec))
+      _ =>
+        new IncomingMessagesImpl(sys.actorOf(Props[SourcesHolder](), s"stream-holder-$service-$streamId"), serializer))
 
   final class ServiceImpl extends EventingTestKitService {
     override def emitSingle(in: EmitSingleCommand): Future[EmitSingleResult] = {
@@ -264,7 +286,7 @@ final class EventingTestServiceImpl(system: ActorSystem[_], val host: String, va
   }
 }
 
-private[testkit] class IncomingMessagesImpl(val sourcesHolder: ActorRef, val codec: MessageCodec)
+private[testkit] class IncomingMessagesImpl(val sourcesHolder: ActorRef, val serializer: JsonSerializer)
     extends IncomingMessages {
 
   def addSourceProbe(runningSourceProbe: RunningSourceProbe): Unit = {
@@ -280,6 +302,14 @@ private[testkit] class IncomingMessagesImpl(val sourcesHolder: ActorRef, val cod
     Await.result(addSource, 5.seconds)
   }
 
+  override def publish(message: Array[Byte]): Unit =
+    publish(message, SdkMetadata.EMPTY)
+
+  override def publish(message: Array[Byte], metadata: SdkMetadata): Unit = {
+    val addSource = sourcesHolder.ask(SourcesHolder.Publish(ByteString.copyFrom(message), metadata))(5.seconds)
+    Await.result(addSource, 5.seconds)
+  }
+
   override def publish(message: TestKitMessage[_]): Unit = message.getPayload match {
     case javaPb: GeneratedMessageV3 => publish(javaPb.toByteString, message.getMetadata)
     case scalaPb: GeneratedMessage  => publish(scalaPb.toByteString, message.getMetadata)
@@ -292,7 +322,7 @@ private[testkit] class IncomingMessagesImpl(val sourcesHolder: ActorRef, val cod
   }
 
   override def publish[T](message: T, subject: String): Unit = {
-    val md = defaultMetadata(message, subject, codec)
+    val md = defaultMetadata(message, subject, serializer)
     publish(TestKitMessageImpl(message, md))
   }
 
@@ -303,8 +333,10 @@ private[testkit] class IncomingMessagesImpl(val sourcesHolder: ActorRef, val cod
     "Publishing a delete message is supported only for ValueEntity messages.")
 }
 
-private[testkit] class VeIncomingMessagesImpl(override val sourcesHolder: ActorRef, override val codec: MessageCodec)
-    extends IncomingMessagesImpl(sourcesHolder, codec) {
+private[testkit] class VeIncomingMessagesImpl(
+    override val sourcesHolder: ActorRef,
+    override val serializer: JsonSerializer)
+    extends IncomingMessagesImpl(sourcesHolder, serializer) {
 
   override def publishDelete(subject: String): Unit = {
     publish(
@@ -319,8 +351,9 @@ private[testkit] class VeIncomingMessagesImpl(override val sourcesHolder: ActorR
 
 private[testkit] class OutgoingMessagesImpl(
     private[testkit] val destinationProbe: TestProbe,
-    protected val codec: MessageCodec)
+    protected val serializer: JsonSerializer)
     extends OutgoingMessages {
+  import EventingTestKitImpl.metadataToSpi
 
   val DefaultTimeout: time.Duration = time.Duration.ofSeconds(3)
 
@@ -349,15 +382,17 @@ private[testkit] class OutgoingMessagesImpl(
 
   override def expectOneTyped[T](clazz: Class[T], timeout: time.Duration): TestKitMessage[T] = {
     val msg = expectMsgInternal(destinationProbe, timeout, Some(clazz))
-    val metadata = MetadataImpl.of(msg.getMessage.getMetadata.entries)
+    val metadata = MetadataImpl.of(metadataToSpi(msg.getMessage.getMetadata))
+    // FIXME don't use proto
     val scalaPb = ScalaPbAny(typeUrlFor(metadata), msg.getMessage.payload)
 
-    val decodedMsg = if (AnySupport.isJsonTypeUrl(typeUrlFor(metadata))) {
+    val decodedMsg = if (serializer.isJsonContentType(typeUrlFor(metadata))) {
       JsonSupport.getObjectMapper
         .readerFor(clazz)
         .readValue(msg.getMessage.payload.toByteArray)
     } else {
-      codec.decodeMessage(scalaPb)
+      val anySupport = new AnySupport(Array(), getClass.getClassLoader)
+      anySupport.decodeMessage(scalaPb)
     }
 
     val concreteType = TestKitMessageImpl.expectType(decodedMsg, clazz)
@@ -365,11 +400,12 @@ private[testkit] class OutgoingMessagesImpl(
   }
 
   private def anyFromMessage(m: kalix.testkit.protocol.eventing_test_backend.Message): TestKitMessage[_] = {
-    val metadata = MetadataImpl.of(m.metadata.getOrElse(Metadata.defaultInstance).entries)
+    val metadata = MetadataImpl.of(metadataToSpi(m.metadata))
     val anyMsg = if (AnySupport.isJsonTypeUrl(typeUrlFor(metadata))) {
-      m.payload.toStringUtf8
+      m.payload.toStringUtf8 // FIXME isn't this strange?
     } else {
-      codec.decodeMessage(ScalaPbAny(typeUrlFor(metadata), m.payload))
+      val anySupport = new AnySupport(Array(), getClass.getClassLoader)
+      anySupport.decodeMessage(ScalaPbAny(typeUrlFor(metadata), m.payload))
     }
     TestKitMessageImpl(anyMsg, metadata)
   }
@@ -420,12 +456,14 @@ private[testkit] case class TestKitMessageImpl[P](payload: P, metadata: SdkMetad
 }
 
 private[testkit] object TestKitMessageImpl {
+  import EventingTestKitImpl.metadataToSpi
+
   def ofProtocolMessage(m: kalix.testkit.protocol.eventing_test_backend.Message): TestKitMessage[ByteString] = {
-    val metadata = MetadataImpl.of(m.metadata.getOrElse(Metadata()).entries)
+    val metadata = MetadataImpl.of(metadataToSpi(m.metadata))
     TestKitMessageImpl[ByteString](m.payload, metadata).asInstanceOf[TestKitMessage[ByteString]]
   }
 
-  def defaultMetadata(message: Any, subject: String, messageCodec: MessageCodec): SdkMetadata = {
+  def defaultMetadata(message: Any, subject: String, serializer: JsonSerializer): SdkMetadata = {
     val (contentType, ceType) = message match {
       case pbMsg: GeneratedMessageV3 =>
         val desc = pbMsg.getDescriptorForType
@@ -436,7 +474,7 @@ private[testkit] object TestKitMessageImpl {
       case _: String =>
         ("text/plain; charset=utf-8", "")
       case _ =>
-        ("application/json", AnySupport.stripJsonTypeUrlPrefix(messageCodec.typeUrlFor(message.getClass)))
+        ("application/json", serializer.stripJsonContentTypePrefix(serializer.contentTypeFor(message.getClass)))
     }
 
     defaultMetadata(subject, contentType, ceType)

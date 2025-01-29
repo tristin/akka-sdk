@@ -4,71 +4,21 @@
 
 package akka.javasdk.impl
 
-import akka.javasdk.impl.AnySupport
-import akka.javasdk.impl.ByteStringEncoding
-import kalix.protocol.discovery.{ DiscoveryProto, UserFunctionError }
-import kalix.protocol.event_sourced_entity.EventSourcedEntityProto
-import com.example.shoppingcart.ShoppingCartApi
 import com.google.protobuf.any.{ Any => ScalaPbAny }
 import com.google.protobuf.{ Any => JavaPbAny }
 import com.google.protobuf.ByteString
-import com.google.protobuf.Empty
 import org.scalatest.OptionValues
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
 class AnySupportSpec extends AnyWordSpec with Matchers with OptionValues {
 
-  private val anySupport = new AnySupport(
-    Array(ShoppingCartApi.getDescriptor, EventSourcedEntityProto.javaDescriptor, DiscoveryProto.javaDescriptor),
-    getClass.getClassLoader,
-    "com.example")
+  private val anySupport = new AnySupport(Array.empty, getClass.getClassLoader, "com.example")
 
-  private val anySupportScala = new AnySupport(
-    Array(ShoppingCartApi.getDescriptor, EventSourcedEntityProto.javaDescriptor, DiscoveryProto.javaDescriptor),
-    getClass.getClassLoader,
-    "com.example",
-    AnySupport.PREFER_SCALA)
-
-  private val addLineItem = ShoppingCartApi.AddLineItem
-    .newBuilder()
-    .setName("item")
-    .setProductId("id")
-    .setQuantity(10)
-    .build()
+  private val anySupportScala =
+    new AnySupport(Array.empty, getClass.getClassLoader, "com.example", AnySupport.PREFER_SCALA)
 
   "Any support for Java" should {
-
-    "support se/deserializing java protobufs" in {
-      val any = anySupport.encodeScala(addLineItem)
-      any.typeUrl should ===("com.example/" + ShoppingCartApi.AddLineItem.getDescriptor.getFullName)
-      anySupport.decodePossiblyPrimitive(any) should ===(addLineItem)
-    }
-
-    "support se/deserializing scala protobufs" in {
-      val error = UserFunctionError("error")
-      val any = anySupport.encodeScala(UserFunctionError("error"))
-      any.typeUrl should ===("com.example/kalix.protocol.UserFunctionError")
-
-      val decoded = anySupport.decodePossiblyPrimitive(any)
-      decoded.getClass should ===(error.getClass)
-      decoded should ===(error)
-    }
-
-    "support resolving a service descriptor" in {
-      val methods =
-        anySupport.resolveServiceDescriptor(ShoppingCartApi.getDescriptor.findServiceByName("ShoppingCartService"))
-      methods should have size 4
-      val method = methods("AddItem")
-
-      // Input type
-      val inputAny = anySupport.encodeScala(addLineItem)
-      method.inputType.parseFrom(inputAny.value) should ===(addLineItem)
-
-      // Output type - this also checks that when java_multiple_files is true, it works
-      val outputAny = anySupport.encodeScala(Empty.getDefaultInstance)
-      method.outputType.parseFrom(outputAny.value) should ===(Empty.getDefaultInstance)
-    }
 
     def testPrimitive[T](name: String, value: T, defaultValue: T) = {
       val any = anySupport.encodeScala(value)

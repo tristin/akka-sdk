@@ -5,76 +5,48 @@
 package akka.javasdk.impl.keyvalueentity
 
 import akka.annotation.InternalApi
-import akka.javasdk.JsonSupport
-import akka.javasdk.impl.AnySupport
-import akka.javasdk.impl.CommandHandler
+import akka.javasdk.impl.MethodInvoker
 import akka.javasdk.impl.CommandSerialization
-import akka.javasdk.impl.InvocationContext
-import akka.javasdk.impl.reflection.Reflect
-import akka.javasdk.keyvalueentity.CommandContext
+import akka.javasdk.impl.HandlerNotFoundException
+import akka.javasdk.impl.serialization.JsonSerializer
 import akka.javasdk.keyvalueentity.KeyValueEntity
-import com.google.protobuf.any.{ Any => ScalaPbAny }
+import akka.runtime.sdk.spi.BytesPayload
 
 /**
  * INTERNAL API
  */
 @InternalApi
-private[impl] final class ReflectiveKeyValueEntityRouter[S, E <: KeyValueEntity[S]](
-    override protected val entity: E,
-    commandHandlers: Map[String, CommandHandler])
-    extends KeyValueEntityRouter[S, E](entity) {
+private[impl] class ReflectiveKeyValueEntityRouter[S, KV <: KeyValueEntity[S]](
+    val entity: KV,
+    methodInvokers: Map[String, MethodInvoker],
+    serializer: JsonSerializer) {
 
-  private def commandHandlerLookup(commandName: String) =
-    commandHandlers.getOrElse(commandName, throw new RuntimeException(s"no matching method for '$commandName'"))
+  private def methodInvokerLookup(commandName: String): MethodInvoker =
+    methodInvokers.get(commandName) match {
+      case Some(handler) => handler
+      case None =>
+        throw new HandlerNotFoundException("command", commandName, entity.getClass, methodInvokers.keySet)
+    }
 
-  override protected def handleCommand(
-      commandName: String,
-      state: S,
-      command: Any,
-      commandContext: CommandContext): KeyValueEntity.Effect[_] = {
+  def handleCommand(commandName: String, command: BytesPayload): KeyValueEntity.Effect[_] = {
 
-    _extractAndSetCurrentState(state)
+    val methodInvoker = methodInvokerLookup(commandName)
 
-    val commandHandler = commandHandlerLookup(commandName)
-    val scalaPbAnyCommand = command.asInstanceOf[ScalaPbAny]
-
-    if (AnySupport.isJson(scalaPbAnyCommand)) {
-      // special cased component client calls, lets json commands through all the way
-      val methodInvoker = commandHandler.getSingleNameInvoker()
+    if (serializer.isJson(command) || command.isEmpty) {
+      // - BytesPayload.empty - there is no real command, and we are calling a method with arity 0
+      // - BytesPayload with json - we deserialize it and call the method
       val deserializedCommand =
-        CommandSerialization.deserializeComponentClientCommand(methodInvoker.method, scalaPbAnyCommand)
+        CommandSerialization.deserializeComponentClientCommand(methodInvoker.method, command, serializer)
       val result = deserializedCommand match {
         case None          => methodInvoker.invoke(entity)
         case Some(command) => methodInvoker.invokeDirectly(entity, command)
       }
       result.asInstanceOf[KeyValueEntity.Effect[_]]
     } else {
-      val invocationContext =
-        InvocationContext(scalaPbAnyCommand, commandHandler.requestMessageDescriptor, commandContext.metadata())
-
-      val inputTypeUrl = command.asInstanceOf[ScalaPbAny].typeUrl
-
-      commandHandler
-        .getInvoker(inputTypeUrl)
-        .invoke(entity, invocationContext)
-        .asInstanceOf[KeyValueEntity.Effect[_]]
+      throw new IllegalStateException(
+        s"Could not find a matching command handler for method [$commandName], content type [${command.contentType}] " +
+        s"on [${entity.getClass.getName}]")
     }
   }
 
-  private def _extractAndSetCurrentState(state: S): Unit = {
-    val entityStateType: Class[S] = Reflect.keyValueEntityStateType(entity.getClass).asInstanceOf[Class[S]]
-
-    // the state: S received can either be of the entity "state" type (if coming from emptyState/memory)
-    // or PB Any type (if coming from the runtime)
-    state match {
-      case s if s == null || state.getClass == entityStateType =>
-        // note that we set the state even if null, this is needed in order to
-        // be able to call currentState() later
-        entity._internalSetCurrentState(s)
-      case s =>
-        val deserializedState =
-          JsonSupport.decodeJson(entityStateType, ScalaPbAny.toJavaProto(s.asInstanceOf[ScalaPbAny]))
-        entity._internalSetCurrentState(deserializedState)
-    }
-  }
 }

@@ -1,11 +1,12 @@
-import sbt._
-import sbt.Keys._
 import akka.grpc.sbt.AkkaGrpcPlugin
+import sbt.*
+import sbt.Keys.*
 import com.lightbend.sbt.JavaFormatterPlugin.autoImport.javafmtOnCompile
 import de.heikoseeberger.sbtheader.{ AutomateHeaderPlugin, HeaderPlugin }
 import org.scalafmt.sbt.ScalafmtPlugin
 import org.scalafmt.sbt.ScalafmtPlugin.autoImport.scalafmtOnCompile
 import sbtprotoc.ProtocPlugin
+
 import scala.collection.breakOut
 
 object CommonSettings extends AutoPlugin {
@@ -43,13 +44,7 @@ object CommonSettings extends AutoPlugin {
       javafmtOnCompile := !insideCI.value,
       scalaVersion := Dependencies.ScalaVersion,
       Compile / javacOptions ++= Seq("-encoding", "UTF-8", "--release", "21"),
-      Compile / scalacOptions ++= Seq(
-        "-encoding",
-        "UTF-8",
-        "-deprecation",
-        // scalac doesn't do 21
-        "-release",
-        "17"),
+      Compile / scalacOptions ++= Seq("-encoding", "UTF-8", "-deprecation", "-release", "21"),
       run / javaOptions ++= {
         sys.props.collect { case (key, value) if key.startsWith("akka") => s"-D$key=$value" }(breakOut)
       }) ++ (

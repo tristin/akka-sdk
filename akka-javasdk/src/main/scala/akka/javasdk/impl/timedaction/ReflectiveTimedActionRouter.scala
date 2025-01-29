@@ -4,16 +4,17 @@
 
 package akka.javasdk.impl.timedaction
 
+import java.util.Optional
+
 import akka.annotation.InternalApi
-import akka.javasdk.impl.AnySupport
-import akka.javasdk.impl.CommandHandler
-import akka.javasdk.impl.InvocationContext
-import akka.javasdk.impl.reflection.Reflect
-import akka.javasdk.impl.AnySupport.ProtobufEmptyTypeUrl
+import akka.javasdk.impl.MethodInvoker
 import akka.javasdk.impl.CommandSerialization
+import akka.javasdk.impl.HandlerNotFoundException
+import akka.javasdk.impl.serialization.JsonSerializer
+import akka.javasdk.timedaction.CommandContext
 import akka.javasdk.timedaction.CommandEnvelope
 import akka.javasdk.timedaction.TimedAction
-import com.google.protobuf.any.{ Any => ScalaPbAny }
+import akka.runtime.sdk.spi.BytesPayload
 
 /**
  * INTERNAL API
@@ -21,64 +22,42 @@ import com.google.protobuf.any.{ Any => ScalaPbAny }
 @InternalApi
 private[impl] final class ReflectiveTimedActionRouter[A <: TimedAction](
     action: A,
-    commandHandlers: Map[String, CommandHandler])
-    extends TimedActionRouter[A](action) {
+    methodInvokers: Map[String, MethodInvoker],
+    serializer: JsonSerializer) {
 
-  private def commandHandlerLookup(commandName: String) =
-    commandHandlers.getOrElse(
-      commandName,
-      throw new RuntimeException(
-        s"no matching method for '$commandName' on [${action.getClass}], existing are [${commandHandlers.keySet
-          .mkString(", ")}]"))
+  private def methodInvokerLookup(commandName: String): MethodInvoker =
+    methodInvokers.get(commandName) match {
+      case Some(handler) => handler
+      case None =>
+        throw new HandlerNotFoundException("command", commandName, action.getClass, methodInvokers.keySet)
+    }
 
-  override def handleUnary(commandName: String, message: CommandEnvelope[Any]): TimedAction.Effect = {
+  def handleCommand(
+      methodName: String,
+      message: CommandEnvelope[BytesPayload],
+      context: CommandContext): TimedAction.Effect = {
+    // only set, never cleared, to allow access from other threads in async callbacks in the action
+    // the same handler and action instance is expected to only ever be invoked for a single command
+    action._internalSetCommandContext(Optional.of(context))
 
-    val commandHandler = commandHandlerLookup(commandName)
+    val methodInvoker = methodInvokerLookup(methodName)
 
-    val scalaPbAnyCommand = message.payload().asInstanceOf[ScalaPbAny]
-    // make sure we route based on the new type url if we get an old json type url message
-    val inputTypeUrl = AnySupport.replaceLegacyJsonPrefix(scalaPbAnyCommand.typeUrl)
-    if ((AnySupport.isJson(
-        scalaPbAnyCommand) || scalaPbAnyCommand.value.isEmpty) && commandHandler.isSingleNameInvoker) {
-      // special cased component client calls, lets json commands trough all the way
-      val methodInvoker = commandHandler.getSingleNameInvoker()
+    val payload = message.payload()
+
+    if (serializer.isJson(payload) || payload.isEmpty) {
+      // - BytesPayload.empty - there is no real command, and we are calling a method with arity 0
+      // - BytesPayload with json - we deserialize it and call the method
       val deserializedCommand =
-        CommandSerialization.deserializeComponentClientCommand(methodInvoker.method, scalaPbAnyCommand)
+        CommandSerialization.deserializeComponentClientCommand(methodInvoker.method, payload, serializer)
       val result = deserializedCommand match {
         case None          => methodInvoker.invoke(action)
         case Some(command) => methodInvoker.invokeDirectly(action, command)
       }
       result.asInstanceOf[TimedAction.Effect]
     } else {
-
-      val invocationContext =
-        InvocationContext(scalaPbAnyCommand, commandHandler.requestMessageDescriptor, message.metadata())
-
-      // lookup ComponentClient
-      val componentClients = Reflect.lookupComponentClientFields(action)
-
-      // inject call metadata
-      componentClients.foreach(cc =>
-        cc.callMetadata =
-          cc.callMetadata.map(existing => existing.merge(message.metadata())).orElse(Some(message.metadata())))
-
-      val methodInvoker = commandHandler.lookupInvoker(inputTypeUrl)
-      methodInvoker match {
-        case Some(invoker) =>
-          inputTypeUrl match {
-            case ProtobufEmptyTypeUrl =>
-              invoker
-                .invoke(action)
-                .asInstanceOf[TimedAction.Effect]
-            case _ =>
-              invoker
-                .invoke(action, invocationContext)
-                .asInstanceOf[TimedAction.Effect]
-          }
-        case None =>
-          throw new NoSuchElementException(
-            s"Couldn't find any method with input type [$inputTypeUrl] in Action [$action].")
-      }
+      throw new IllegalStateException(
+        s"Could not find a matching command handler for method [$methodName], content type [${payload.contentType}] " +
+        s"on [${action.getClass.getName}]")
     }
   }
 }

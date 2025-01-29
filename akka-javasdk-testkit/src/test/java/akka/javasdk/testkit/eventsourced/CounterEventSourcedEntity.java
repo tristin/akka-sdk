@@ -10,6 +10,7 @@ public class CounterEventSourcedEntity extends EventSourcedEntity<Integer, Incre
 
   public Effect<String> increaseBy(Integer value) {
     if (value <= 0) return effects().error("Can't increase with a negative value");
+    else if (wouldOverflow(value)) return effects().error("Can't increase by [" + value + "] due to overflow");
     else return effects().persist(new Increased(commandContext().entityId(), value)).thenReply(__ -> "Ok");
   }
 
@@ -19,15 +20,27 @@ public class CounterEventSourcedEntity extends EventSourcedEntity<Integer, Incre
 
   public Effect<String> doubleIncreaseBy(Integer value) {
     if (value < 0) return effects().error("Can't increase with a negative value");
-    else {
+    else if (wouldOverflow(value + value) || (value + value) < 0) {
+      return effects().error("Can't double-increase by [" + value + "] due to overflow");
+    } else {
       Increased event = new Increased(commandContext().entityId(), value);
       return effects().persist(event, event).thenReply(__ -> "Ok");
     }
+  }
+
+  public Effect<String> delete() {
+    return effects().persist(new Increased(commandContext().entityId(), 0)).deleteEntity().thenReply(__ -> "Ok");
   }
 
   @Override
   public Integer applyEvent(Increased increased) {
     if (currentState() == null) return increased.value();
     else return currentState() + increased.value();
+  }
+
+  private boolean wouldOverflow(Integer increase) {
+    var current = currentState();
+
+    return (current != null) && (increase > (Integer.MAX_VALUE - current));
   }
 }

@@ -5,14 +5,14 @@
 package akka.javasdk.impl
 
 import akka.annotation.InternalApi
-import akka.javasdk.JsonSupport
-import com.google.protobuf.any.Any.toJavaProto
-import com.google.protobuf.any.{ Any => ScalaPbAny }
-
 import java.lang.reflect.Method
 import java.lang.reflect.ParameterizedType
 import java.util
+
 import scala.util.control.NonFatal
+
+import akka.javasdk.impl.serialization.JsonSerializer
+import akka.runtime.sdk.spi.BytesPayload
 
 /**
  * INTERNAL API
@@ -20,7 +20,10 @@ import scala.util.control.NonFatal
 @InternalApi
 object CommandSerialization {
 
-  def deserializeComponentClientCommand(method: Method, command: ScalaPbAny): Option[AnyRef] = {
+  def deserializeComponentClientCommand(
+      method: Method,
+      command: BytesPayload,
+      serializer: JsonSerializer): Option[AnyRef] = {
     // special cased component client calls, lets json commands through all the way
     val parameterTypes = method.getGenericParameterTypes
     if (parameterTypes.isEmpty) None
@@ -34,7 +37,7 @@ object CommandSerialization {
       try {
         parameterTypes.head match {
           case paramClass: Class[_] =>
-            Some(JsonSupport.decodeJson(paramClass, command).asInstanceOf[AnyRef])
+            Some(serializer.fromBytes(paramClass, command).asInstanceOf[AnyRef])
           case parameterizedType: ParameterizedType =>
             if (classOf[java.util.Collection[_]]
                 .isAssignableFrom(parameterizedType.getRawType.asInstanceOf[Class[_]])) {
@@ -45,10 +48,10 @@ object CommandSerialization {
                     s"Command handler [${method.getDeclaringClass.getName}.${method.getName}] accepts a parameter that is a collection with a generic type inside, this is not supported.")
               }
               Some(
-                JsonSupport.decodeJsonCollection(
+                serializer.fromBytes(
                   elementType.asInstanceOf[Class[AnyRef]],
                   parameterizedType.getRawType.asInstanceOf[Class[util.Collection[AnyRef]]],
-                  toJavaProto(command)))
+                  command))
             } else
               throw new RuntimeException(
                 s"Command handler [${method.getDeclaringClass.getName}.${method.getName}] handler accepts a parameter that is a generic type [$parameterizedType], this is not supported.")

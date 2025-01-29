@@ -117,7 +117,7 @@ private[akka] final case class RequestBuilderImpl[R](
   override def withRequestBody(`object`: AnyRef): RequestBuilder[R] = {
     if (`object` eq null) throw new IllegalArgumentException("object must not be null")
     try {
-      val body = JsonSupport.encodeToBytes(`object`).toByteArray
+      val body = JsonSupport.encodeToAkkaByteString(`object`)
       val requestWithBody = request.withEntity(ContentTypes.APPLICATION_JSON, body)
       withRequest(requestWithBody)
     } catch {
@@ -167,7 +167,7 @@ private[akka] final case class RequestBuilderImpl[R](
             throw new RuntimeException(errorString + ": " + bytes.utf8String)
         }
       } else if (res.entity.getContentType == ContentTypes.APPLICATION_JSON)
-        new StrictResponse[T](res, JsonSupport.parseBytes(bytes.toArrayUnsafe(), `type`))
+        new StrictResponse[T](res, JsonSupport.decodeJson(`type`, bytes))
       else if (!res.entity.getContentType.binary && (`type` eq classOf[String]))
         new StrictResponse[T](
           res,
@@ -192,4 +192,10 @@ private[akka] final case class RequestBuilderImpl[R](
       timeout,
       request,
       (res: HttpResponse, bytes: ByteString) => new StrictResponse[T](res, parse.apply(bytes.toArray)))
+
+  override def addQueryParameter(key: String, value: String): RequestBuilder[R] = {
+    val query = request.getUri.query().withParam(key, value)
+    val uriWithQuery = request.getUri.query(query)
+    withRequest(request.withUri(uriWithQuery))
+  }
 }

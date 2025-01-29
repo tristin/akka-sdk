@@ -24,15 +24,43 @@ import akka.javasdk.testmodels.keyvalueentity.TimeTrackerEntity;
 import akka.javasdk.testmodels.keyvalueentity.User;
 import akka.javasdk.testmodels.keyvalueentity.UserEntity;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
 public class ViewTestModels {
 
+  public record EveryType(
+      int intValue,
+      long longValue,
+      float floatValue,
+      double doubleValue,
+      boolean booleanValue,
+      String stringValue,
+      Integer wrappedInt,
+      Long wrappedLong,
+      Float wrappedFloat,
+      Double wrappedDouble,
+      Boolean wrappedBoolean,
+      Instant instant,
+      Byte[] bytes,
+      Optional<String> optionalString,
+      List<String> repeatedString,
+      ByEmail nestedMessage,
+      AnEnum anEnum
+  ) {}
+
+  public enum AnEnum {
+    ONE, TWO, THREE
+  }
+
   // common query parameter for views in this file
   public record ByEmail(String email) {
   }
 
+  public record Recursive(String id, Recursive child) {}
+  public record TwoStepRecursive(TwoStepRecursiveChild child) {}
+  public record TwoStepRecursiveChild(TwoStepRecursive recursive) {}
 
   @ComponentId("users_view")
   public static class UserByEmailWithGet extends View {
@@ -700,26 +728,28 @@ public class ViewTestModels {
     }
   }
 
-  @ComponentId("employee_view")
-  public static class TopicSubscriptionView extends View {
 
-    @Consume.FromTopic(value = "source", consumerGroup = "cg")
-    public static class Employees extends TableUpdater<Employee> {
+  public record ById(String id) {}
 
-      public Effect<Employee> onCreate(EmployeeEvent.EmployeeCreated evt) {
-        return effects()
-            .updateRow(new Employee(evt.firstName, evt.lastName, evt.email));
-      }
+  @ComponentId("recursive_view")
+  public static class RecursiveViewStateView extends View {
+    @Consume.FromTopic(value = "recursivetopic")
+    public static class Events extends TableUpdater<Recursive> { }
 
-      public Effect<Employee> onEmailUpdate(EmployeeEvent.EmployeeEmailUpdated eeu) {
-        var employee = rowState();
-        return effects().updateRow(new Employee(employee.firstName(), employee.lastName(), eeu.email));
-      }
-    }
-
-    @Query("SELECT * FROM employees WHERE email = :email")
-    public QueryEffect<Employee> getEmployeeByEmail(ByEmail byEmail) {
+    @Query("SELECT * FROM events WHERE id = :id")
+    public QueryEffect<Employee> getEmployeeByEmail(ById id) {
       return queryResult();
+    }
+  }
+
+  @ComponentId("all_the_field_types_view")
+  public static class AllTheFieldTypesView extends View {
+    @Consume.FromTopic(value = "allthetypestopic")
+    public static class Events extends TableUpdater<EveryType> { }
+
+    @Query("SELECT * FROM rows")
+    public QueryStreamEffect<Employee> allRows() {
+      return queryStreamResult();
     }
   }
 }
