@@ -4,6 +4,8 @@
 
 package akka.javasdk.testkit;
 
+import akka.grpc.javadsl.AkkaGrpcClient;
+import akka.javasdk.Principal;
 import akka.javasdk.client.ComponentClient;
 import akka.javasdk.http.HttpClient;
 import akka.javasdk.timer.TimerScheduler;
@@ -70,11 +72,32 @@ public abstract class TestKitSupport extends AsyncCallsSupport {
   }
 
 
-
+  /**
+   * Lookup a specific object as provided by the service dependency provider
+   */
   public <T> T getDependency(Class<T> clazz) {
     return testKit.getDependencyProvider().map(provider -> provider.getDependency(clazz))
       .orElseThrow(() -> new IllegalStateException("DependencyProvider not available, or not yet initialized."));
   }
 
+  /**
+   * Get a gRPC client for an endpoint provided by this service.
+   * Requests will appear as coming from this service itself from an ACL perspective.
+   *
+   * @param grpcClientClass The generated Akka gRPC client interface for a gRPC endpoint in this service
+   */
+  public <T extends AkkaGrpcClient> T getGrpcEndpointClient(Class<T> grpcClientClass) {
+    return testKit.getGrpcEndpointClient(grpcClientClass);
+  }
+
+  /**
+   * Get a gRPC client for an endpoint provided by this service but specify the client principal for the ACLs.
+   *
+   * @param grpcClientClass The generated Akka gRPC client interface for a gRPC endpoint in this service
+   * @param requestPrincipal A principal that any request from the returned service will have when requests are handled in the endpoint.
+   */
+  public <T extends AkkaGrpcClient> T getGrpcEndpointClient(Class<T> grpcClientClass, Principal requestPrincipal) {
+    return testKit.getGrpcEndpointClient(grpcClientClass, requestPrincipal);
+  }
 
 }

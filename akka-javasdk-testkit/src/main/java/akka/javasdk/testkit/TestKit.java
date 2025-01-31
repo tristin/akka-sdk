@@ -5,18 +5,22 @@
 package akka.javasdk.testkit;
 
 import akka.actor.typed.ActorSystem;
+import akka.grpc.javadsl.AkkaGrpcClient;
 import akka.http.javadsl.Http;
 import akka.http.javadsl.model.HttpRequest;
 import akka.javasdk.DependencyProvider;
 import akka.javasdk.Metadata;
+import akka.javasdk.Principal;
 import akka.javasdk.ServiceSetup;
 import akka.javasdk.client.ComponentClient;
+import akka.javasdk.grpc.GrpcClientProvider;
 import akka.javasdk.http.HttpClient;
 import akka.javasdk.http.HttpClientProvider;
 import akka.javasdk.impl.ErrorHandling;
 import akka.javasdk.impl.Sdk;
 import akka.javasdk.impl.SdkRunner;
 import akka.javasdk.impl.client.ComponentClientImpl;
+import akka.javasdk.impl.grpc.GrpcClientProviderImpl;
 import akka.javasdk.impl.http.HttpClientImpl;
 import akka.javasdk.impl.serialization.JsonSerializer;
 import akka.javasdk.impl.timer.TimerSchedulerImpl;
@@ -380,12 +384,13 @@ public class TestKit {
 
   private EventingTestKit.MessageBuilder messageBuilder;
   private boolean started = false;
-  private String proxyHost;
-  private int proxyPort;
+  private String runtimeHost;
+  private int runtimePort;
   private EventingTestKit eventingTestKit;
   private ActorSystem<?> runtimeActorSystem;
   private ComponentClient componentClient;
   private HttpClientProvider httpClientProvider;
+  private GrpcClientProviderImpl grpcClientProvider;
   private HttpClient selfHttpClient;
   private TimerScheduler timerScheduler;
   private Optional<DependencyProvider> dependencyProvider;
@@ -424,14 +429,14 @@ public class TestKit {
     started = true;
 
     if (log.isDebugEnabled())
-      log.debug("TestKit using [{}:{}] for calls to the service", proxyHost, proxyPort);
+      log.debug("TestKit using [{}:{}] for calls to the service", runtimeHost, runtimePort);
 
     return this;
   }
 
   private void startEventingTestkit() {
     if (settings.eventingSupport == TEST_BROKER || settings.mockedEventing.hasConfig()) {
-      log.info("Eventing TestKit booting up on port: " + eventingTestKitPort);
+      log.info("Eventing TestKit booting up on port: {}", eventingTestKitPort);
       // actual message codec instance not available until runtime/sdk started, thus this is called after discovery happens
       eventingTestKit = EventingTestKit.start(runtimeActorSystem, "0.0.0.0", eventingTestKitPort, new JsonSerializer());
     }
@@ -440,13 +445,25 @@ public class TestKit {
   private void startRuntime(final Config config)  {
     try {
       log.debug("Config from user: {}", config);
+      runtimeHost = "localhost";
 
       SdkRunner runner = new SdkRunner(settings.dependencyProvider, settings.disabledComponents) {
         @Override
         public Config applicationConfig() {
-          return ConfigFactory.parseString("akka.javasdk.dev-mode.enabled = true")
-              .withFallback(config)
-              .withFallback(super.applicationConfig());
+          var userConfig = config.withFallback(super.applicationConfig());
+          runtimePort = userConfig.getInt("akka.javasdk.testkit.http-port");
+
+          var grpcClientSelfConfigPrefix = "akka.javasdk.grpc.client." + settings.serviceName;
+          var defaultConfigMap = Map.of(
+              "akka.javasdk.dev-mode.enabled", true,
+              // used by the gRPC endpoint test client to call itself
+              grpcClientSelfConfigPrefix + ".host", runtimeHost,
+              grpcClientSelfConfigPrefix + ".port", runtimePort,
+              grpcClientSelfConfigPrefix + ".use-tls", false
+          );
+
+          return ConfigFactory.parseMap(defaultConfigMap)
+              .withFallback(userConfig);
         }
 
         @Override
@@ -466,9 +483,8 @@ public class TestKit {
           if (s.devMode().isEmpty())
             throw new IllegalStateException("dev-mode must be enabled"); // it's set from overridden applicationConfig method
 
-          proxyPort = applicationConfig.getInt("akka.javasdk.testkit.http-port");
           SpiDevModeSettings devModeSettings = new SpiDevModeSettings(
-              proxyPort,
+              runtimePort,
               settings.aclEnabled,
               false,
               settings.serviceName + "-IT-" + System.currentTimeMillis(),
@@ -493,12 +509,10 @@ public class TestKit {
 
       startEventingTestkit();
 
-      proxyHost = "localhost";
-
       Http http = Http.get(runtimeActorSystem);
       log.info("Checking runtime status");
       CompletionStage<String> checkingProxyStatus = Patterns.retry(() ->
-        http.singleRequest(HttpRequest.GET("http://" + proxyHost + ":" + proxyPort + "/akka/dev-mode/health-check")).thenCompose(response -> {
+        http.singleRequest(HttpRequest.GET("http://" + runtimeHost + ":" + runtimePort + "/akka/dev-mode/health-check")).thenCompose(response -> {
           int responseCode = response.status().intValue();
           if (responseCode == 404) {
             log.info("Runtime started");
@@ -526,8 +540,9 @@ public class TestKit {
 
       // once runtime is started
       componentClient = new ComponentClientImpl(componentClients, serializer, Option.empty(), runtimeActorSystem.executionContext());
-      selfHttpClient = new HttpClientImpl(runtimeActorSystem, "http://" + proxyHost + ":" + proxyPort);
+      selfHttpClient = new HttpClientImpl(runtimeActorSystem, "http://" + runtimeHost + ":" + runtimePort);
       httpClientProvider = startupContext.httpClientProvider();
+      grpcClientProvider = startupContext.grpcClientProvider();
       timerScheduler = new TimerSchedulerImpl(componentClients.timerClient(), Metadata.EMPTY);
       this.messageBuilder = new EventingTestKit.MessageBuilder(serializer);
 
@@ -544,7 +559,7 @@ public class TestKit {
     if (!started)
       throw new IllegalStateException("Need to start the testkit before accessing the host name");
 
-    return proxyHost;
+    return runtimeHost;
   }
 
   /**
@@ -554,7 +569,7 @@ public class TestKit {
     if (!started)
       throw new IllegalStateException("Need to start the testkit before accessing the port");
 
-    return proxyPort;
+    return runtimePort;
   }
 
   /**
@@ -605,6 +620,39 @@ public class TestKit {
   public HttpClientProvider getHttpClientProvider() {
     return httpClientProvider;
   }
+
+  /**
+   * Get a gRPC client for an endpoint provided by this service.
+   * Requests will appear as coming from this service itself from an ACL perspective.
+   *
+   * @param grpcClientClass The generated Akka gRPC client interface for a gRPC endpoint in this service
+   */
+  public <T extends AkkaGrpcClient> T getGrpcEndpointClient(Class<T> grpcClientClass) {
+    return grpcClientProvider.grpcClientFor(grpcClientClass, settings.serviceName);
+  }
+
+  /**
+   * Get a gRPC client for an endpoint provided by this service but specify the client principal for the ACLs.
+   *
+   * @param grpcClientClass The generated Akka gRPC client interface for a gRPC endpoint in this service
+   * @param requestPrincipal A principal that any request from the returned service will have when requests are handled in the endpoint.
+   */
+  @SuppressWarnings("unchecked")
+  public <T extends AkkaGrpcClient> T getGrpcEndpointClient(Class<T> grpcClientClass, Principal requestPrincipal) {
+    var client = grpcClientProvider.createNewClientFor(grpcClientClass, settings.serviceName, false);
+    if (requestPrincipal == Principal.SELF) {
+      // no need to use this method, but let's allow it
+      return getGrpcEndpointClient(grpcClientClass);
+    } else if (requestPrincipal instanceof Principal.LocalService service) {
+      return (T) client.addRequestHeader("impersonate-service", service.getName());
+    } else if (requestPrincipal == Principal.INTERNET) {
+      // no principal / as from internet
+      return client;
+    } else {
+      throw new IllegalArgumentException("Speciied principal " + requestPrincipal + " not supported by testkit");
+    }
+  }
+  // FIXME do we need a "get client with this principal" kind of method? Not sure that is useful (unlike in Kalix SDKs)
 
   /**
    * Get a {@link HttpClient} for interacting with the service itself, the client will not be authenticated
