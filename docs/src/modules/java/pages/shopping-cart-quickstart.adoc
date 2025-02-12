@@ -217,30 +217,6 @@ Here, you can view not only the http://localhost:3000/services/shopping-cart-qui
 akka auth login
 ----
 
-. Create a project:
-+
-[source, command line]
-----
-akka projects new my-first-app --region aws-us-east-2
-----
-
-. Observe that your project was created successfully:
-+
-[source]
-----
-NAME          DESCRIPTION   ID                                     OWNER                   REGION
-my-first-app                703391f5-cee4-4d50-8a7f-07c5d1183aaa   your-organization-name  aws-us-east-2
-
-To make this the currently active project, run: 'akka config set project my-first-app'
-----
-
-. Make the project you just created the currently active project:
-+
-[source, command line]
-----
-akka config set project my-first-app
-----
-
 . Build a container image of your shopping cart service:
 +
 [source, command line]
@@ -292,7 +268,7 @@ Should respond with something similar to (the exact address is generated for you
 +
 [source, command line]
 ----
-Service 'cart-service' was successfully exposed at: spring-tooth-3406.us-east1.akka.app
+Service 'cart-service' was successfully exposed at: spring-tooth-3406.gcp-us-east1.akka.services
 ----
 
 Congratulations, you have successfully deployed your service. You can now access it using the hostname described in the output of the command above.
@@ -305,7 +281,7 @@ Add an item to the shopping cart:
 
 [source, command window]
 ----
-curl -i -XPUT -H "Content-Type: application/json" https://spring-tooth-3406.us-east1.akka.app/carts/123/item -d '
+curl -i -XPUT -H "Content-Type: application/json" https://spring-tooth-3406.gcp-us-east1.akka.services/carts/123/item -d '
 {"productId":"akka-tshirt", "name":"Akka Tshirt", "quantity": 10}'
 ----
 
@@ -313,7 +289,7 @@ Get cart state:
 
 [source, command window]
 ----
-curl https://spring-tooth-3406.us-east1.akka.app/carts/123
+curl https://spring-tooth-3406.gcp-us-east1.akka.services/carts/123
 ----
 
 == Explore the console
