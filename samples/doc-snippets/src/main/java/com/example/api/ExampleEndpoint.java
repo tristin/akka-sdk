@@ -1,9 +1,11 @@
 package com.example.api;
 
 
+import akka.actor.Cancellable;
 import akka.http.javadsl.model.ContentType;
 import akka.http.javadsl.model.ContentTypes;
 import akka.http.javadsl.model.HttpEntity;
+import akka.http.javadsl.model.HttpHeader;
 import akka.http.javadsl.model.HttpRequest;
 import akka.http.javadsl.model.HttpResponse;
 import akka.http.javadsl.model.MediaTypes;
@@ -20,8 +22,10 @@ import akka.javasdk.http.AbstractHttpEndpoint;
 import akka.javasdk.http.HttpException;
 import akka.javasdk.http.HttpResponses;
 import akka.stream.Materializer;
+import akka.stream.javadsl.Source;
 import com.fasterxml.jackson.core.JsonProcessingException;
 
+import java.time.Duration;
 import java.util.concurrent.CompletionStage;
 
 // tag::basic-endpoint[]
@@ -134,7 +138,7 @@ public class ExampleEndpoint extends AbstractHttpEndpoint {
   // end::low-level-request[]
 
   // tag::lower-level-request[]
-  @Get("/hello-lower-level-request/{name}")
+  @Get("/hello-request-header/{name}")
   public CompletionStage<String> lowerLevelRequestHello(String name, HttpRequest request) {
     if (request.getHeader("X-my-special-header").isEmpty()) {
       return request.discardEntityBytes(materializer).completionStage().thenApply(__ -> { // <2>
@@ -149,4 +153,26 @@ public class ExampleEndpoint extends AbstractHttpEndpoint {
     }
   }
   // end::lower-level-request[]
+
+  // tag::header-access[]
+  @Get("/hello-request-header-from-context")
+  public String requestHeaderFromContext() {
+    var name = requestContext().requestHeader("X-my-special-header") // <1>
+        .map(HttpHeader::value)
+        .orElseThrow(() -> new IllegalArgumentException("Request is missing my special header"));
+
+    return "Hello " + name + "!";
+  }
+  // end::header-access[]
+
+  // tag::basic-sse[]
+  @Get("/current-time")
+  public HttpResponse streamCurrentTime() {
+    Source<Long, Cancellable> timeSource =
+        Source.tick(Duration.ZERO, Duration.ofSeconds(5), "tick") // <1>
+            .map(__ -> System.currentTimeMillis()); // <2>
+
+    return HttpResponses.serverSentEvents(timeSource); // <3>
+  }
+  // end::basic-sse[]
 }
