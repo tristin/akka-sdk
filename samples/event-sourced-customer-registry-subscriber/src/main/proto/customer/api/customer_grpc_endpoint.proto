@@ -1,13 +1,10 @@
-// tag::minimal[]
 syntax = "proto3";
 
 option java_multiple_files = true;
-option java_package = "customer.api.proto"; // <1>
+option java_package = "customer.api.proto";
 
 package customer.api;
-// end::minimal[]
 
-// tag::get[]
 message Address {
   string street = 1;
   string city = 2;
@@ -18,7 +15,6 @@ message Customer {
   string name = 2;
   Address address = 3;
 }
-// end::get[]
 
 message CreateCustomerRequest {
   string customer_id = 1;
@@ -26,11 +22,9 @@ message CreateCustomerRequest {
 }
 message CreateCustomerResponse {}
 
-// tag::get[]
 message GetCustomerRequest {
   string customer_id = 1;
 }
-// tag::get[]
 
 message ChangeNameRequest {
   string customer_id = 1;
@@ -65,17 +59,12 @@ message CustomerSummary {
   string name = 2;
 }
 
-// tag::minimal[]
-
 service CustomerGrpcEndpoint {
   // end::streaming-output[]
-  // end::minimal[]
 
-  rpc CreateCustomer (CreateCustomerRequest) returns (CreateCustomerResponse) {} // <2>
+  rpc CreateCustomer (CreateCustomerRequest) returns (CreateCustomerResponse) {}
 
-  // tag::get[]
   rpc GetCustomer (GetCustomerRequest) returns (Customer) {}
-  // end::get[]
 
   rpc ChangeName (ChangeNameRequest) returns (ChangeNameResponse) {}
 
@@ -88,9 +77,7 @@ service CustomerGrpcEndpoint {
   // tag::streaming-output[]
   // ...
   rpc CustomerByEmailStream (CustomerByEmailRequest) returns (stream CustomerSummary) {}
-// tag::minimal[]
 }
-// end::minimal[]
 // end::streaming-output[]
 
 // The request message containing the user's name.

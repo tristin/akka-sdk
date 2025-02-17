@@ -1,9 +1,11 @@
 package customer.api;
 
+import akka.NotUsed;
 import akka.grpc.GrpcServiceException;
 import akka.javasdk.annotations.Acl;
 import akka.javasdk.annotations.GrpcEndpoint;
 import akka.javasdk.client.ComponentClient;
+import akka.stream.javadsl.Source;
 import customer.api.proto.*;
 import customer.application.CustomerByEmailView;
 import customer.application.CustomerByNameView;
@@ -12,19 +14,24 @@ import io.grpc.Status;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
 @Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
-@GrpcEndpoint
+// tag::class[]
+// tag::endpoint-component-interaction[]
+@GrpcEndpoint // <1>
 public class CustomerGrpcEndpointImpl implements CustomerGrpcEndpoint {
+  // tag::class[]
 
   private static final Logger log = LoggerFactory.getLogger(CustomerGrpcEndpointImpl.class);
 
   private final ComponentClient componentClient;
 
-  public CustomerGrpcEndpointImpl(ComponentClient componentClient) {
+  public CustomerGrpcEndpointImpl(ComponentClient componentClient) { // <2>
     this.componentClient = componentClient;
   }
+  // end::endpoint-component-interaction[]
 
   @Override
   public CompletionStage<CreateCustomerResponse> createCustomer(CreateCustomerRequest in) {
@@ -38,17 +45,27 @@ public class CustomerGrpcEndpointImpl implements CustomerGrpcEndpoint {
         .thenApply(__ -> CreateCustomerResponse.getDefaultInstance());
   }
 
+  // tag::get[]
+
   @Override
   public CompletionStage<Customer> getCustomer(GetCustomerRequest in) {
-    return componentClient.forEventSourcedEntity(in.getCustomerId())
+    // tag::exception[]
+    if (in.getCustomerId().isBlank())
+      throw new GrpcServiceException(
+          Status.INVALID_ARGUMENT.augmentDescription("Customer id must not be empty"));
+    // end::exception[]
+
+    return componentClient.forEventSourcedEntity(in.getCustomerId()) // <3>
         .method(CustomerEntity::getCustomer)
         .invokeAsync()
-        .thenApply(this::domainToApi)
+        .thenApply(this::domainToApi) // <4>
         .exceptionally(ex -> {
           if (ex.getMessage().contains("No customer found for id")) throw new GrpcServiceException(Status.NOT_FOUND);
           else throw new RuntimeException(ex);
         });
   }
+  // end::get[]
+
 
   @Override
   public CompletionStage<ChangeNameResponse> changeName(ChangeNameRequest in) {
@@ -95,6 +112,22 @@ public class CustomerGrpcEndpointImpl implements CustomerGrpcEndpoint {
         });
   }
 
+  // tag::customerByEmailStream[]
+  @Override
+  public Source<CustomerSummary, NotUsed> customerByEmailStream(CustomerByEmailRequest in) {
+    // Shows of streaming consumption of a view, transforming
+    // each element and passing along to a streamed response
+    var customerSummarySource = componentClient.forView()
+        .stream(CustomerByEmailView::getCustomersStream)
+        .source(in.getEmail());
+
+    return customerSummarySource.map(c ->
+      CustomerSummary.newBuilder()
+          .setName(c.name())
+          .setEmail(c.email())
+          .build());
+  }
+  // end::customerByEmailStream[]
 
   // Conversions between the public gRPC API protobuf messages and the internal
   // Java domain classes.
@@ -116,6 +149,8 @@ public class CustomerGrpcEndpointImpl implements CustomerGrpcEndpoint {
     }
   }
 
+  // tag::endpoint-component-interaction[]
+
   private Customer domainToApi(customer.domain.Customer domainCustomer) {
     return Customer.newBuilder()
         .setName(domainCustomer.name())
@@ -133,6 +168,7 @@ public class CustomerGrpcEndpointImpl implements CustomerGrpcEndpoint {
           .build();
     }
   }
+  // end::endpoint-component-interaction[]
 
   private Customer domainToApi(customer.domain.CustomerRow domainRow) {
     return Customer.newBuilder()
