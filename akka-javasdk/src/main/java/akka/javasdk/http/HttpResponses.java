@@ -11,6 +11,7 @@ import akka.http.javadsl.model.headers.CacheDirectives;
 import akka.http.javadsl.model.headers.Connection;
 import akka.http.javadsl.model.sse.ServerSentEvent;
 import akka.javasdk.JsonSupport;
+import akka.javasdk.impl.http.HttpClassPathResource;
 import akka.stream.javadsl.Source;
 import com.google.common.net.HttpHeaders;
 
@@ -190,6 +191,40 @@ public class HttpResponses {
   public static HttpResponse notImplemented(String text) {
     return ok(text).withStatus(StatusCodes.NOT_IMPLEMENTED);
   }
+
+  /**
+   * Load a resource from the class-path directory <code>static-resources</code> and return it as an HTTP response.
+   *
+   * @param resourcePath A relative path to the resource folder <code>static-resources</code> on the class path. Must not
+   *                     start with <code>/</code>
+   * @return A 404 not found response if there is no such resource. 403 forbidden if the path contains <code>..</code> or references a folder.
+   */
+  public static HttpResponse staticResource(String resourcePath) {
+    return HttpClassPathResource.fromStaticPath(resourcePath);
+  }
+
+
+  /**
+   * Load a resource from the class-path directory <code>static-resources</code> and return it as an HTTP response.
+   *
+   * @param request A request to use the path from
+   * @param prefixToStrip Strip this prefix from the request path, to create the actual path relative to <code>static-resources</code>
+   *                      to load the resource from. Must not be empty.
+   * @return A 404 not found response if there is no such resource. 403 forbidden if the path contains <code>..</code> or references a folder.
+   * @throws RuntimeException if the request path does not start with <code>prefixToStrip</code> or if <code>prefixToStrip</code> is empty
+   */
+  public static HttpResponse staticResource(HttpRequest request, String prefixToStrip) {
+    if (prefixToStrip.isEmpty()) throw new RuntimeException("prefixToStrip must not be empty");
+    var actualPrefixToStrip = prefixToStrip.startsWith("/") ? prefixToStrip : "/" + prefixToStrip;
+    actualPrefixToStrip = actualPrefixToStrip.endsWith("/") ? actualPrefixToStrip : actualPrefixToStrip + "/";
+    var fullPath = request.getUri().getPathString();
+    if (!fullPath.startsWith(actualPrefixToStrip)) {
+      throw new RuntimeException("Request path [" + fullPath + "] does not start with the expected prefix [" + prefixToStrip + "]");
+    }
+    var strippedPath = fullPath.substring(actualPrefixToStrip.length());
+    return staticResource(strippedPath);
+  }
+
 
   private final static ContentType TEXT_EVENT_STREAM = ContentTypes.parse("text/event-stream");
 
