@@ -5,7 +5,6 @@ import akka.javasdk.annotations.http.HttpEndpoint;
 import akka.javasdk.annotations.http.Post;
 import akka.javasdk.http.HttpClient;
 import akka.javasdk.http.HttpClientProvider;
-import akka.javasdk.http.StrictResponse;
 
 import java.util.concurrent.CompletionStage;
 
@@ -29,7 +28,7 @@ public class DelegatingServiceEndpoint {
   // model for the JSON the upstream service responds with
   record Counter(int value) {}
 
-  @Post("/delegate/counter/{counter_id}/increase")
+  @Post("/delegate/counter/{counterId}/increase")
   public CompletionStage<String> addAndReturn(String counterId, IncreaseRequest request) {
     CompletionStage<String> result =
         httpClient.POST("/counter/" + counterId + "/increase") // <3>

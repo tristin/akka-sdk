@@ -1,0 +1,37 @@
+// Copyright (C) 2021-2024 Lightbend Inc. <https://www.lightbend.com>
+
+// gRPC interface for a gRPC endpoint component
+
+syntax = "proto3";
+
+package akkajavasdk;
+
+option java_package = "akkajavasdk.protocol";
+
+message In {
+  string data = 1;
+}
+
+message Out {
+  string data = 1;
+}
+
+service TestGrpcService {
+  rpc Simple(In) returns (Out) {};
+  rpc ReadMetadata(In) returns (Out) {};
+  rpc DelegateToAkkaService(In) returns (Out) {};
+  rpc DelegateToExternal(In) returns (Out) {};
+  rpc CustomStatus(In) returns (Out) {};
+  rpc AclPublic(In) returns (Out) {};
+  rpc AclService(In) returns (Out) {};
+  rpc AclInheritedDenyCode(In) returns (Out) {};
+  rpc AclOverrideDenyCode(In) returns (Out) {};
+  rpc AclDefaultDenyCode(In) returns (Out) {};
+}
+
+service TestJwtsGrpcService {
+  rpc JwtIssuer(In) returns (Out) {};
+  rpc JwtStaticClaimValue(In) returns (Out) {};
+  rpc JwtStaticClaimPattern(In) returns (Out) {};
+  rpc JwtInherited(In) returns (Out) {};
+}

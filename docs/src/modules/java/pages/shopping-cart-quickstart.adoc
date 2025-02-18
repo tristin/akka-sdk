@@ -8,9 +8,9 @@ This guide walks you through a shopping cart service illustrating the use of som
 
 The shopping cart service implements a cart that allows users to add and remove items, get the contents of carts, and checkout the carts.
 
-In this guide you will
+In this guide you will:
 
-* Download a completed shopping cart service to examine and run it locally.
+* Clone a completed shopping cart service repository to examine and run it locally.
 * Be introduced to key Akka concepts including xref:java:event-sourced-entities.adoc[Event Sourced Entities].
 * See how the Akka xref:concepts:architecture-model.adoc[] provides a clear separation of concerns in your microservices.
 * Run the service locally and explore it with the local Akka console.
@@ -20,17 +20,16 @@ In this guide you will
 
 include::ROOT:partial$cloud-dev-prerequisites.adoc[]
 
+== Clone the sample
 
-== Download the sample
-
-You can download the full source code of the Shopping Cart sample as a link:_attachments/shopping-cart-quickstart.zip[zip file], or you can use the Akka CLI command below to download and unzip this quickstart project.
-
+. Clone the full source code of the Shopping Cart sample from link:https://github.com/akka-samples/shopping-cart-quickstart[Github], or use the Akka CLI command below to download and unzip this quickstart project.
++
 [source,bash]
 ----
 akka quickstart download shopping-cart
 ----
 
-Then open the project in your favorite IDE.
+. Open the project in your favorite Integrated Development Environment (IDE).
 
 == Understanding the shopping cart
 
@@ -60,7 +59,7 @@ include::example$shopping-cart-quickstart/src/main/java/shoppingcart/domain/Shop
 <1> `ItemAdded` event derives from the `ShoppingCartEvent` interface.
 <2> Specifying a logical type name, required for serialization.
 
-You may notice that there are other events defined as well, this is how the application will pass Java events between the Akka runtime and the domain object.
+You may notice that there are other events defined as well. This is how the application will pass Java events between the Akka runtime and the domain object.
 
 Jumping back to the `ShoppingCart` domain class, there is also business logic to handle the `ItemAdded` domain event for adding items to the cart:
 
@@ -70,8 +69,8 @@ Jumping back to the `ShoppingCart` domain class, there is also business logic to
 include::example$shopping-cart-quickstart/src/main/java/shoppingcart/domain/ShoppingCart.java[tag=itemAdded]
 ----
 <1> For an existing item, we will make sure to sum the existing quantity with the incoming one.
-<2> Returns an update list of items without the existing item.
-<3> Adds the update item to the shopping cart.
+<2> Returns an updated list of items without the existing item.
+<3> Adds the updated item to the shopping cart.
 <4> Returns a new instance of the shopping cart with the updated line items.
 
 === The ShoppingCart entity
@@ -129,52 +128,48 @@ include::example$shopping-cart-quickstart/src/main/java/shoppingcart/api/Shoppin
 <6> Use path parameter `+{cartId}+` in combination with request body `ShoppingCart.LineItem`.
 <7> Map request to a more suitable response, in this case an `HTTP 200 OK` response.
 
-
 == Run locally
 
-Start your service locally:
-
+. Start your service locally:
++
 [source, command line]
 ----
 mvn compile exec:java
 ----
-
 Once successfully started, any defined endpoints become available at `localhost:9000`.
 
-Let's send some requests using `curl`.
-
-Add some T-shirts to a shopping cart:
-
+. Let's send some requests using `curl`. Add some T-shirts to a shopping cart:
++
 [source, command line]
 ----
 curl -i -XPUT -H "Content-Type: application/json" localhost:9000/carts/123/item -d '
 {"productId":"akka-tshirt", "name":"Akka Tshirt", "quantity": 3}'
 ----
 
-Add some blue jeans to the shopping cart:
-
+. Add some blue jeans to the shopping cart:
++
 [source, command line]
 ----
 curl -i -XPUT -H "Content-Type: application/json" localhost:9000/carts/123/item -d '
 {"productId":"blue-jeans", "name":"Blue Jeans", "quantity": 2}'
 ----
 
-Add a few more T-shirts to the shopping cart:
-
+. Add a few more T-shirts to the shopping cart:
++
 [source, command line]
 ----
 curl -i -XPUT -H "Content-Type: application/json" localhost:9000/carts/123/item -d '
 {"productId":"akka-tshirt", "name":"Akka Tshirt", "quantity": 3}'
 ----
 
-Request to see all of the items in the cart:
-
+. Request to see all of the items in the cart:
++
 [source, command line]
 ----
 curl localhost:9000/carts/123
 ----
 
-Observe all the items in the cart:
+. Observe all the items in the cart:
 
 [source]
 ----
@@ -182,20 +177,18 @@ Observe all the items in the cart:
 {"productId":"blue-jeans","name":"Blue Jeans","quantity":5}],"checkedOut":false}
 ----
 
-
 == Explore the local console
 
-To get a clear view of your locally running service, xref:reference:cli/installation.adoc[install the Akka CLI]. It provides a local web-based management console.
+. To get a clear view of your locally running service, xref:reference:cli/installation.adoc[install the Akka CLI]. It provides a local web-based management console.
 
-After you have installed the CLI, start the local console:
-
+. Start the local console:
++
 [source, command line]
 ----
 akka local console
 ----
-
 This will start a Docker container running the local console:
-
++
 [source]
 ----
 > Local Console is running at:             http://localhost:3000
@@ -203,7 +196,7 @@ This will start a Docker container running the local console:
 --------------------
 ----
 
-You can open http://localhost:3000/[window="new"] to see your local service in action:
+. Open http://localhost:3000/[window="new"] to see your local service in action:
 
 image:local-console-first-app-events.png[]
 
@@ -214,40 +207,21 @@ Here, you can view not only the http://localhost:3000/services/shopping-cart-qui
 . If you have not already done so, xref:reference:cli/installation.adoc[install the Akka CLI].
 
 . Authenticate the CLI with your Akka account:
++
 [source, command line]
 ----
 akka auth login
 ----
 
-. Create a project:
-[source, command line]
-----
-akka projects new my-first-app --region aws-us-east-2
-----
-
-Observe that your project was created successfully:
-[source]
-----
-NAME          DESCRIPTION   ID                                     OWNER                   REGION
-my-first-app                703391f5-cee4-4d50-8a7f-07c5d1183aaa   your-organization-name  aws-us-east-2
-
-To make this the currently active project, run: 'akka config set project my-first-app'
-----
-
-. Make the project you just created the currently active project:
-[source, command line]
-----
-akka config set project my-first-app
-----
-
 . Build a container image of your shopping cart service:
++
 [source, command line]
 ----
 mvn clean install -DskipTests
 ----
 
-. Take note of the container name and tag from last line in the output, for example:
-
+. Take note of the container name and tag from the last line in the output, for example:
++
 [source, command line]
 ----
 DOCKER> Tagging image shoppingcart:1.0-SNAPSHOT-20241028102843 successful!
@@ -257,11 +231,11 @@ DOCKER> Tagging image shoppingcart:1.0-SNAPSHOT-20241028102843 successful!
 * `container-name` with the container name from the `mvn install` output in the previous step
 * `tag-name` with the tag name from the `mvn install` output in the previous step
 
++
 [source, command line]
 ----
 akka service deploy cart-service shoppingcart:tag-name --push
 ----
-
 Your service named `cart-service` will now begin deploying.
 
 . Verify the deployment status of your service:
@@ -277,7 +251,6 @@ A service status can be one of the following:
 * *UpdateInProgress*: Service is updating.
 * *Unavailable*: No service instances are available.
 * *PartiallyReady*: Some, but not all, service instances are available.
-
 Approximately one minute after deploying, your service status should become *Ready*.
 
 . Expose your service to the internet:
@@ -289,9 +262,9 @@ akka service expose cart-service
 +
 Should respond with something similar to (the exact address is generated for your service):
 +
-[source]
+[source, command line]
 ----
-Service 'cart-service' was successfully exposed at: spring-tooth-3406.us-east1.akka.app
+Service 'cart-service' was successfully exposed at: spring-tooth-3406.gcp-us-east1.akka.services
 ----
 
 Congratulations, you have successfully deployed your service. You can now access it using the hostname described in the output of the command above.
@@ -300,26 +273,26 @@ Congratulations, you have successfully deployed your service. You can now access
 
 You can use https://curl.se[cURL, window="new"] to invoke your service, replacing URL with the hostname that it was exposed as.
 
-Add an item to the shopping cart:
-
+. Add an item to the shopping cart:
++
 [source, command window]
 ----
-curl -i -XPUT -H "Content-Type: application/json" https://spring-tooth-3406.us-east1.akka.app/carts/123/item -d '
+curl -i -XPUT -H "Content-Type: application/json" https://spring-tooth-3406.gcp-us-east1.akka.services/carts/123/item -d '
 {"productId":"akka-tshirt", "name":"Akka Tshirt", "quantity": 10}'
 ----
 
-Get cart state:
-
+. Get cart state:
++
 [source, command window]
 ----
-curl https://spring-tooth-3406.us-east1.akka.app/carts/123
+curl https://spring-tooth-3406.gcp-us-east1.akka.services/carts/123
 ----
 
 == Explore the console
 
 1. Open the https://console.akka.io[*Akka Console*, window="new"].
 2. Navigate to the *Project* where the Service is deployed.
-3. Click on the *Service* card of the Service, it shows detailed information about the running service.
+3. Click on the *Service* card of the Service. It shows detailed information about the running service.
 
 image:console-first-app-service.png[]
 

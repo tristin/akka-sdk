@@ -5,15 +5,18 @@
 package akka.javasdk.http;
 
 
-import akka.http.javadsl.model.ContentType;
-import akka.http.javadsl.model.ContentTypes;
-import akka.http.javadsl.model.HttpHeader;
-import akka.http.javadsl.model.HttpResponse;
-import akka.http.javadsl.model.StatusCode;
-import akka.http.javadsl.model.StatusCodes;
+import akka.http.javadsl.model.*;
+import akka.http.javadsl.model.headers.CacheControl;
+import akka.http.javadsl.model.headers.CacheDirectives;
+import akka.http.javadsl.model.headers.Connection;
+import akka.http.javadsl.model.sse.ServerSentEvent;
 import akka.javasdk.JsonSupport;
-import com.fasterxml.jackson.core.JsonProcessingException;
+import akka.javasdk.impl.http.HttpClassPathResource;
+import akka.stream.javadsl.Source;
 import com.google.common.net.HttpHeaders;
+
+import java.time.Duration;
+import java.util.Arrays;
 
 
 /**
@@ -187,6 +190,63 @@ public class HttpResponses {
    */
   public static HttpResponse notImplemented(String text) {
     return ok(text).withStatus(StatusCodes.NOT_IMPLEMENTED);
+  }
+
+  /**
+   * Load a resource from the class-path directory <code>static-resources</code> and return it as an HTTP response.
+   *
+   * @param resourcePath A relative path to the resource folder <code>static-resources</code> on the class path. Must not
+   *                     start with <code>/</code>
+   * @return A 404 not found response if there is no such resource. 403 forbidden if the path contains <code>..</code> or references a folder.
+   */
+  public static HttpResponse staticResource(String resourcePath) {
+    return HttpClassPathResource.fromStaticPath(resourcePath);
+  }
+
+
+  /**
+   * Load a resource from the class-path directory <code>static-resources</code> and return it as an HTTP response.
+   *
+   * @param request A request to use the path from
+   * @param prefixToStrip Strip this prefix from the request path, to create the actual path relative to <code>static-resources</code>
+   *                      to load the resource from. Must not be empty.
+   * @return A 404 not found response if there is no such resource. 403 forbidden if the path contains <code>..</code> or references a folder.
+   * @throws RuntimeException if the request path does not start with <code>prefixToStrip</code> or if <code>prefixToStrip</code> is empty
+   */
+  public static HttpResponse staticResource(HttpRequest request, String prefixToStrip) {
+    if (prefixToStrip.isEmpty()) throw new RuntimeException("prefixToStrip must not be empty");
+    var actualPrefixToStrip = prefixToStrip.startsWith("/") ? prefixToStrip : "/" + prefixToStrip;
+    actualPrefixToStrip = actualPrefixToStrip.endsWith("/") ? actualPrefixToStrip : actualPrefixToStrip + "/";
+    var fullPath = request.getUri().getPathString();
+    if (!fullPath.startsWith(actualPrefixToStrip)) {
+      throw new RuntimeException("Request path [" + fullPath + "] does not start with the expected prefix [" + prefixToStrip + "]");
+    }
+    var strippedPath = fullPath.substring(actualPrefixToStrip.length());
+    return staticResource(strippedPath);
+  }
+
+
+  private final static ContentType TEXT_EVENT_STREAM = ContentTypes.parse("text/event-stream");
+
+  /**
+   * @return A HttpResponse with a server sent events (SSE) stream response. The HTTP response will contain each element
+   *         in the source, rendered to JSON using jackson. An SSE keepalive element is emitted every 10 seconds if the stream
+   *         is idle.
+   */
+  public static <T> HttpResponse serverSentEvents(Source<T, ?> source) {
+    var sseSource = source
+        .map(elem -> ServerSentEvent.create(JsonSupport.getObjectMapper().writeValueAsString(elem)))
+        .keepAlive(Duration.ofSeconds(10), ServerSentEvent::heartbeat)
+        // Note: using Akka HTTP internal method
+        .map(e -> ((akka.http.scaladsl.model.sse.ServerSentEvent) e).encode());
+
+    return HttpResponse.create()
+        .withStatus(StatusCodes.OK)
+        .withHeaders(Arrays.asList(
+            CacheControl.create(CacheDirectives.NO_CACHE),
+            Connection.create("keep-alive")
+        ))
+        .withEntity(HttpEntities.create(TEXT_EVENT_STREAM, sseSource));
   }
 
 

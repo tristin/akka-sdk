@@ -1,35 +1,35 @@
 package customer.api;
 
-import akka.Done;
 import akka.NotUsed;
-import akka.http.javadsl.model.ContentType;
+import akka.actor.Cancellable;
 import akka.http.javadsl.model.ContentTypes;
 import akka.http.javadsl.model.HttpEntities;
 import akka.http.javadsl.model.HttpResponse;
 import akka.http.javadsl.model.StatusCodes;
-import akka.http.javadsl.model.headers.CacheControl;
-import akka.http.javadsl.model.headers.CacheDirectives;
-import akka.http.javadsl.model.headers.Connection;
-import akka.javasdk.JsonSupport;
 import akka.javasdk.annotations.Acl;
 import akka.javasdk.annotations.http.Delete;
 import akka.javasdk.annotations.http.Get;
 import akka.javasdk.annotations.http.HttpEndpoint;
 import akka.javasdk.annotations.http.Patch;
 import akka.javasdk.annotations.http.Post;
-import akka.javasdk.annotations.http.Put;
 import akka.javasdk.client.ComponentClient;
 import akka.javasdk.http.HttpException;
 import akka.javasdk.http.HttpResponses;
 import akka.stream.javadsl.Source;
 import akka.util.ByteString;
-import customer.application.*;
+import customer.application.CustomerEntity;
+import customer.application.CustomerList;
+import customer.application.CustomerSummaryByName;
+import customer.application.CustomersByCity;
+import customer.application.CustomersByEmail;
+import customer.application.CustomersByName;
+import customer.application.CustomersResponseByName;
 import customer.domain.Address;
 import customer.domain.Customer;
 
-import java.util.Arrays;
+import java.time.Duration;
 import java.util.List;
-import java.util.UUID;
+import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 
 // Opened up for access from the public internet to make the sample service easy to try out.
@@ -45,24 +45,24 @@ public class CustomerEndpoint {
     this.componentClient = componentClient;
   }
 
-  public record CustomerRequest(String id, String name, String email, String city, String street) {}
+  public record ApiCustomer(String id, String name, String email, String city, String street) { }
 
   @Post("/{customerId}")
-  public CompletionStage<HttpResponse> create(String customerId, CustomerRequest request) {
-    Customer c = new Customer(request.email(), request.name(), new Address(request.street(), request.city()));
+  public CompletionStage<HttpResponse> create(String customerId, ApiCustomer request) {
+    var customer = new Customer(request.email(), request.name(), new Address(request.street(), request.city()));
 
     return componentClient.forKeyValueEntity(customerId)
         .method(CustomerEntity::create)
-        .invokeAsync(c)
+        .invokeAsync(customer)
         .thenApply(__ -> HttpResponses.created());
   }
 
   @Get("/{customerId}")
-  public  CompletionStage<CustomerRequest> get(String customerId) {
+  public  CompletionStage<ApiCustomer> get(String customerId) {
     return componentClient.forKeyValueEntity(customerId)
         .method(CustomerEntity::getCustomer)
         .invokeAsync()
-        .thenApply(c -> new CustomerRequest(customerId, c.name(), c.email(), c.address().city(), c.address().street()));
+        .thenApply(customer -> toApiCustomer(customerId, customer));
   }
 
   @Patch("/{id}/name/{newName}")
@@ -108,32 +108,63 @@ public class CustomerEndpoint {
         .withEntity(HttpEntities.create(ContentTypes.TEXT_CSV_UTF8, csvByteChunkStream));
   }
 
-  private final static ContentType TEXT_EVENT_STREAM = ContentTypes.parse("text/event-stream");
-
+  // tag::sse-view-updates[]
   @Get("/by-name-sse/{name}")
   public HttpResponse continousByNameServerSentEvents(String name) {
     // view will keep stream going, toggled with streamUpdates = true on the query
-    var customerSummarySource = componentClient.forView()
+    Source<CustomersByName.CustomerSummary, NotUsed> customerSummarySource = componentClient.forView() // <1>
         .stream(CustomersByName::continuousGetCustomerSummaryStream)
         .source(name);
 
-    final var eventPrefix = ByteString.fromString("data: ");
-    final var eventEnd = ByteString.fromString("\n\n");
-    // Server sent events
-    // https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#event_stream_format
-    Source<ByteString, NotUsed> sseCustomerSummaryStream =
-        customerSummarySource.map(customerSummary ->
-            eventPrefix.concat(JsonSupport.encodeToAkkaByteString(customerSummary)).concat(eventEnd)
-        );
-
-    return HttpResponse.create()
-        .withStatus(StatusCodes.OK)
-        .withHeaders(Arrays.asList(
-            CacheControl.create(CacheDirectives.NO_CACHE),
-            Connection.create("keep-alive")
-        ))
-        .withEntity(HttpEntities.create(TEXT_EVENT_STREAM, sseCustomerSummaryStream));
+    return HttpResponses.serverSentEvents(customerSummarySource); // <2>
   }
+  // end::sse-view-updates[]
+
+  // tag::sse-customer-changes[]
+  private record CustomerStreamState(Optional<Customer> customer, boolean isSame) {}
+
+  @Get("/stream-customer-changes/{customerId}")
+  public HttpResponse streamCustomerChanges(String customerId) {
+    Source<Customer, Cancellable> stateEvery5Seconds =
+        // stream of ticks, one immediately, then one every five seconds
+        Source.tick(Duration.ZERO, Duration.ofSeconds(5), "tick") // <1>
+          // for each tick, request the entity state
+          .mapAsync(1, __ ->
+            componentClient.forKeyValueEntity(customerId)
+                .method(CustomerEntity::getCustomer)
+                .invokeAsync().handle((Customer customer, Throwable error) -> {
+                  if (error == null) {
+                    return Optional.of(customer);
+                  } else if (error instanceof IllegalArgumentException) {
+                    // calling getCustomer throws IllegalArgument if the customer does not exist
+                    // we want the stream to continue polling in that case, so turn it into an empty optional
+                    return Optional.<Customer>empty();
+                  } else {
+                    throw new RuntimeException("Unexpected error polling customer state", error);
+                  }
+                })
+          )
+          // then filter out the empty optionals and return the actual customer states for nonempty
+          // so that the stream contains only Customer elements
+          .filter(Optional::isPresent).map(Optional::get);
+
+    // deduplicate, so that we don't emit if the state did not change from last time
+    Source<Customer, Cancellable> streamOfChanges = // <2>
+        stateEvery5Seconds.scan(new CustomerStreamState(Optional.empty(), true),
+          (state, newCustomer) ->
+            new CustomerStreamState(Optional.of(newCustomer), state.customer.isPresent() && state.customer.get().equals(newCustomer))
+        ).filterNot(state -> state.isSame || state.customer.isEmpty())
+        .map(state -> state.customer.get());
+
+    // now turn each changed internal state representation into public API representation,
+    // just like get endpoint above
+    Source<ApiCustomer, Cancellable> streamOfChangesAsApiType = // <3>
+        streamOfChanges.map(customer -> toApiCustomer(customerId, customer));
+
+    // turn into server sent event response
+    return HttpResponses.serverSentEvents(streamOfChangesAsApiType); // <4>
+  }
+  // end::sse-customer-changes[]
 
   @Get("/{id}/address")
   public CompletionStage<Address> getAddress(String id) {
@@ -180,6 +211,10 @@ public class CustomerEndpoint {
         .method(CustomerEntity::delete)
         .invokeAsync()
         .thenApply(__ -> HttpResponses.noContent());
+  }
+
+  private ApiCustomer toApiCustomer(String customerId, Customer customer) {
+    return new ApiCustomer(customerId, customer.name(), customer.email(), customer.address().city(), customer.address().street());
   }
 
 }
