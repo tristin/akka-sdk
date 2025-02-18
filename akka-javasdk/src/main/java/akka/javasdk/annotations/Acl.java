@@ -32,37 +32,17 @@ public @interface Acl {
   /**
    * The status code to respond with when access is denied.
    * <p>
-   * By default, this will be 'Forbidden', but alternatives might include 'Authentication required' or 'Not
-   * Found'.
+   * By default, this will be '403 Forbidden' for HTTP endpoints and 'PERMISSION DENIED (7)' for gRPC endpoints.
+   * If set at class-level, it will automatically be inherited by all methods in the class that are not
+   * annotated with their own @Acl definition.
+   *
+   * For HTTP, common used values are between 400 and 599,
+   * see exhaustive list at https://www.rfc-editor.org/rfc/rfc9110.html#name-status-codes
+   *
+   * For gRPC, the status codes values can be consulted at https://grpc.github.io/grpc/core/md_doc_statuscodes.html
    *
    */
-  DenyStatusCode denyCode() default DenyStatusCode.FORBIDDEN;
-
-  /**
-   * If {@code true}, indicates that the {@code denyCode} should be inherited from the parent.
-   * If set to {@code true} in the top most parent - like the {@code Main} class - then it will be equivalent to set {@code denyCode} to 'FORBIDDEN'
-   */
-  boolean inheritDenyCode() default false;
-
-  enum DenyStatusCode {
-    BAD_REQUEST(3),
-    FORBIDDEN(7),
-    NOT_FOUND(5),
-    AUTHENTICATION_REQUIRED(16),
-    CONFLICT(6),
-    INTERNAL_SERVER_ERROR(13),
-    SERVICE_UNAVAILABLE(14),
-    GATEWAY_TIMEOUT(4);
-
-
-
-    public final int value;
-    DenyStatusCode(int value){
-      this.value = value;
-    }
-
-  }
-
+  int denyCode() default -1;
 
   /**
    * A principal matcher that can be used in an ACL.

@@ -10,7 +10,6 @@ import java.lang.reflect.Method
 import java.util
 import java.util.Optional
 import java.util.concurrent.CompletionStage
-
 import scala.annotation.nowarn
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
@@ -21,10 +20,11 @@ import scala.jdk.OptionConverters.RichOption
 import scala.jdk.OptionConverters.RichOptional
 import scala.reflect.ClassTag
 import scala.util.control.NonFatal
-
 import akka.Done
 import akka.actor.typed.ActorSystem
 import akka.annotation.InternalApi
+import akka.grpc.internal.JavaMetadataImpl
+import akka.grpc.javadsl.Metadata
 import akka.http.javadsl.model.HttpHeader
 import akka.http.scaladsl.model.headers.RawHeader
 import akka.javasdk.BuildInfo
@@ -34,12 +34,16 @@ import akka.javasdk.Principals
 import akka.javasdk.ServiceSetup
 import akka.javasdk.Tracing
 import akka.javasdk.annotations.ComponentId
+import akka.javasdk.annotations.GrpcEndpoint
 import akka.javasdk.annotations.Setup
 import akka.javasdk.annotations.http.HttpEndpoint
 import akka.javasdk.client.ComponentClient
 import akka.javasdk.consumer.Consumer
 import akka.javasdk.eventsourcedentity.EventSourcedEntity
 import akka.javasdk.eventsourcedentity.EventSourcedEntityContext
+import akka.javasdk.grpc.AbstractGrpcEndpoint
+import akka.javasdk.grpc.GrpcClientProvider
+import akka.javasdk.grpc.GrpcRequestContext
 import akka.javasdk.http.AbstractHttpEndpoint
 import akka.javasdk.http.HttpClientProvider
 import akka.javasdk.http.RequestContext
@@ -52,6 +56,7 @@ import akka.javasdk.impl.Validations.Validation
 import akka.javasdk.impl.client.ComponentClientImpl
 import akka.javasdk.impl.consumer.ConsumerImpl
 import akka.javasdk.impl.eventsourcedentity.EventSourcedEntityImpl
+import akka.javasdk.impl.grpc.GrpcClientProviderImpl
 import akka.javasdk.impl.http.HttpClientProviderImpl
 import akka.javasdk.impl.http.JwtClaimsImpl
 import akka.javasdk.impl.keyvalueentity.KeyValueEntityImpl
@@ -75,6 +80,7 @@ import akka.runtime.sdk.spi
 import akka.runtime.sdk.spi.ComponentClients
 import akka.runtime.sdk.spi.ConsumerDescriptor
 import akka.runtime.sdk.spi.EventSourcedEntityDescriptor
+import akka.runtime.sdk.spi.GrpcEndpointRequestConstructionContext
 import akka.runtime.sdk.spi.HttpEndpointConstructionContext
 import akka.runtime.sdk.spi.RemoteIdentification
 import akka.runtime.sdk.spi.SpiComponents
@@ -201,6 +207,7 @@ private object ComponentType {
   val KeyValueEntity = "key-value-entity"
   val Workflow = "workflow"
   val HttpEndpoint = "http-endpoint"
+  val GrpcEndpoint = "grpc-endpoint"
   val Consumer = "consumer"
   val TimedAction = "timed-action"
   val View = "view"
@@ -225,6 +232,7 @@ private object ComponentLocator {
     val kalixComponentTypeAndBaseClasses: Map[String, Class[_]] =
       Map(
         ComponentType.HttpEndpoint -> classOf[AnyRef],
+        ComponentType.GrpcEndpoint -> classOf[AnyRef],
         ComponentType.TimedAction -> classOf[TimedAction],
         ComponentType.Consumer -> classOf[Consumer],
         ComponentType.EventSourcedEntity -> classOf[EventSourcedEntity[_, _]],
@@ -288,7 +296,20 @@ private[javasdk] object Sdk {
       componentClients: ComponentClients,
       dependencyProvider: Option[DependencyProvider],
       httpClientProvider: HttpClientProvider,
+      grpcClientProvider: GrpcClientProviderImpl,
       serializer: JsonSerializer)
+
+  private val platformManagedDependency = Set[Class[_]](
+    classOf[ComponentClient],
+    classOf[TimerScheduler],
+    classOf[HttpClientProvider],
+    classOf[GrpcClientProvider],
+    classOf[Tracer],
+    classOf[Span],
+    classOf[Config],
+    classOf[WorkflowContext],
+    classOf[EventSourcedEntityContext],
+    classOf[KeyValueEntityContext])
 }
 
 /**
@@ -307,6 +328,8 @@ private final class Sdk(
     disabledComponents: Set[Class[_]],
     startedPromise: Promise[StartupContext],
     serviceNameOverride: Option[String]) {
+  import Sdk._
+
   private val logger = LoggerFactory.getLogger(getClass)
   private val serializer = new JsonSerializer
   private val ComponentLocator.LocatedClasses(componentClasses, maybeServiceClass) =
@@ -318,7 +341,7 @@ private final class Sdk(
 
   private val sdkTracerFactory = () => tracerFactory(TraceInstrumentation.InstrumentationScopeName)
 
-  private val httpClientProvider = new HttpClientProviderImpl(
+  private lazy val httpClientProvider = new HttpClientProviderImpl(
     system,
     None,
     remoteIdentification.map(ri => RawHeader(ri.headerName, ri.headerValue)),
@@ -332,6 +355,12 @@ private final class Sdk(
       .foldLeft(applicationConfig) { (conf, toHide) => conf.withoutPath(toHide) }
       .withValue("akka.javasdk", sdkConfig)
   }
+
+  private lazy val grpcClientProvider = new GrpcClientProviderImpl(
+    system,
+    sdkSettings,
+    userServiceConfig,
+    remoteIdentification.map(ri => GrpcClientProviderImpl.AuthHeaders(ri.headerName, ri.headerValue)))
 
   // validate service classes before instantiating
   private val validation = componentClasses.foldLeft(Valid: Validation) { case (validations, cls) =>
@@ -349,7 +378,7 @@ private final class Sdk(
       true
     } else {
       //additional check to skip logging for endpoints
-      if (!clz.hasAnnotation[HttpEndpoint]) {
+      if (!clz.hasAnnotation[HttpEndpoint] && !clz.hasAnnotation[GrpcEndpoint]) {
         //this could happen when we remove the @ComponentId annotation from the class,
         //the file descriptor generated by annotation processor might still have this class entry,
         //for instance when working with IDE and incremental compilation (without clean)
@@ -413,6 +442,13 @@ private final class Sdk(
     .filter(Reflect.isRestEndpoint)
     .map { httpEndpointClass =>
       HttpEndpointDescriptorFactory(httpEndpointClass, httpEndpointFactory(httpEndpointClass))
+    }
+
+  private val grpcEndpointDescriptors = componentClasses
+    .filter(Reflect.isGrpcEndpoint)
+    .map { grpcEndpointClass =>
+      val anyRefClass = grpcEndpointClass.asInstanceOf[Class[AnyRef]]
+      GrpcEndpointDescriptorFactory(anyRefClass, grpcEndpointFactory(anyRefClass))(system)
     }
 
   private var eventSourcedEntityDescriptors = Vector.empty[EventSourcedEntityDescriptor]
@@ -578,6 +614,7 @@ private final class Sdk(
     // remember to update component type API doc and docs if changing the set of injectables
     case p if p == classOf[ComponentClient]    => componentClient(span)
     case h if h == classOf[HttpClientProvider] => httpClientProvider(span)
+    case g if g == classOf[GrpcClientProvider] => grpcClientProvider(span)
     case t if t == classOf[TimerScheduler]     => timerScheduler(span)
     case m if m == classOf[Materializer]       => sdkMaterializer
   }
@@ -602,6 +639,7 @@ private final class Sdk(
       (eventSourcedEntityDescriptors ++
         keyValueEntityDescriptors ++
         httpEndpointDescriptors ++
+        grpcEndpointDescriptors ++
         timedActionDescriptors ++
         consumerDescriptors ++
         viewDescriptors ++
@@ -611,7 +649,8 @@ private final class Sdk(
     val preStart = { (_: ActorSystem[_]) =>
       serviceSetup match {
         case None =>
-          startedPromise.trySuccess(StartupContext(runtimeComponentClients, None, httpClientProvider, serializer))
+          startedPromise.trySuccess(
+            StartupContext(runtimeComponentClients, None, httpClientProvider, grpcClientProvider, serializer))
           Future.successful(Done)
         case Some(setup) =>
           if (dependencyProviderOpt.nonEmpty) {
@@ -621,7 +660,12 @@ private final class Sdk(
             dependencyProviderOpt.foreach(_ => logger.info("Service configured with DependencyProvider"))
           }
           startedPromise.trySuccess(
-            StartupContext(runtimeComponentClients, dependencyProviderOpt, httpClientProvider, serializer))
+            StartupContext(
+              runtimeComponentClients,
+              dependencyProviderOpt,
+              httpClientProvider,
+              grpcClientProvider,
+              serializer))
           Future.successful(Done)
       }
     }
@@ -715,6 +759,38 @@ private final class Sdk(
       instance
   }
 
+  private def grpcEndpointFactory[E](grpcEndpointClass: Class[E]): GrpcEndpointRequestConstructionContext => E =
+    (context: GrpcEndpointRequestConstructionContext) => {
+
+      lazy val grpcRequestContext = new GrpcRequestContext {
+        override def getPrincipals: Principals =
+          PrincipalsImpl(context.principal.source, context.principal.service)
+
+        override def getJwtClaims: JwtClaims =
+          context.jwt match {
+            case Some(jwtClaims) => new JwtClaimsImpl(jwtClaims)
+            case None =>
+              throw new RuntimeException(
+                "There are no JWT claims defined but trying accessing the JWT claims. The class or the method needs to be annotated with @JWT.")
+          }
+
+        override def metadata(): Metadata = new JavaMetadataImpl(context.metadata)
+
+        override def tracing(): Tracing = new SpanTracingImpl(context.openTelemetrySpan, sdkTracerFactory)
+      }
+
+      val instance = wiredInstance(grpcEndpointClass) {
+        sideEffectingComponentInjects(context.openTelemetrySpan).orElse {
+          case p if p == classOf[GrpcRequestContext] => grpcRequestContext
+        }
+      }
+      instance match {
+        case withBaseClass: AbstractGrpcEndpoint => withBaseClass._internalSetRequestContext(grpcRequestContext)
+        case _                                   =>
+      }
+      instance
+    }
+
   private def wiredInstance[T](clz: Class[T])(partial: PartialFunction[Class[_], Any]): T = {
     // only one constructor allowed
     require(clz.getDeclaredConstructors.length == 1, s"Class [${clz.getSimpleName}] must have only one constructor.")
@@ -765,18 +841,6 @@ private final class Sdk(
     }
   }
 
-  private def platformManagedDependency(anyOther: Class[_]) = {
-    anyOther == classOf[ComponentClient] ||
-    anyOther == classOf[TimerScheduler] ||
-    anyOther == classOf[HttpClientProvider] ||
-    anyOther == classOf[Tracer] ||
-    anyOther == classOf[Span] ||
-    anyOther == classOf[Config] ||
-    anyOther == classOf[WorkflowContext] ||
-    anyOther == classOf[EventSourcedEntityContext] ||
-    anyOther == classOf[KeyValueEntityContext]
-  }
-
   private def componentClient(openTelemetrySpan: Option[Span]): ComponentClient = {
     ComponentClientImpl(runtimeComponentClients, serializer, openTelemetrySpan)(sdkExecutionContext)
   }
@@ -793,6 +857,12 @@ private final class Sdk(
     openTelemetrySpan match {
       case None       => httpClientProvider
       case Some(span) => httpClientProvider.withTraceContext(OtelContext.current().`with`(span))
+    }
+
+  private def grpcClientProvider(openTelemetrySpan: Option[Span]): GrpcClientProvider =
+    openTelemetrySpan match {
+      case None       => grpcClientProvider
+      case Some(span) => grpcClientProvider.withTraceContext(OtelContext.current().`with`(span))
     }
 
 }

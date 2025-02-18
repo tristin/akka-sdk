@@ -38,8 +38,8 @@ jobs:
 
       - name: Restore Coursier cache
         # https://github.com/actions/cache/releases
-        # v4.0.2
-        uses: actions/cache/restore@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        # v4.2.0
+        uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57
         with:
           path: |
             ~/.cache/coursier
@@ -73,6 +73,12 @@ jobs:
           sbt --client "scalafmtCheckAll; scalafmtSbtCheck" || \
             { echo "[error] Code not formatted prior to commit. Run 'sbt scalafmtAll scalafmtSbt' then commit the reformatted code."; false; }
 
+      - name: Run additional validations
+        run: |
+          sbt --client "additionalValidation" || \
+            { echo "[error] Additional validation failed."; false; }
+        
+
       - name: sbt shutdown
         run: |
           sbt --client shutdown
@@ -94,8 +100,8 @@ jobs:
 
       - name: Cache Coursier cache
         # https://github.com/actions/cache/releases
-        # v4.0.2
-        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        # v4.2.0
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
         with:
           path: |
             ~/.cache/coursier
@@ -116,8 +122,8 @@ jobs:
 
       - name: Cache Maven repository
         # https://github.com/actions/cache/releases
-        # v4.0.2
-        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        # v4.2.0
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('akka-javasdk-maven/pom.xml') }}
@@ -175,8 +181,8 @@ jobs:
 
       - name: Restore Coursier cache
         # https://github.com/actions/cache/releases
-        # v4.0.2
-        uses: actions/cache/restore@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        # v4.2.0
+        uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57
         with:
           path: |
             ~/.cache/coursier
@@ -230,8 +236,8 @@ jobs:
 
       - name: Restore Coursier cache
         # https://github.com/actions/cache/releases
-        # v4.0.2
-        uses: actions/cache/restore@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        # v4.2.0
+        uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57
         with:
           path: |
             ~/.cache/coursier
@@ -292,8 +298,8 @@ jobs:
 
       - name: Cache Maven repository
         # https://github.com/actions/cache/releases
-        # v4.0.2
-        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        # v4.2.0
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('akka-javasdk-maven/pom.xml') }}
@@ -390,8 +396,8 @@ jobs:
 
       - name: Cache Maven repository
         # https://github.com/actions/cache/releases
-        # v4.0.2
-        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        # v4.2.0
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('akka-javasdk-maven/pom.xml') }}
