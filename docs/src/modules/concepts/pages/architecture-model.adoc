@@ -98,8 +98,12 @@ image:ROOT:workflow.png[Workflows,width=100,float=left] _Workflows_ enable the d
 
 === Timed actions
 
-_Timed Actions_ allow for scheduling calls in the future. For example, to verify that some process have been completed or not. For more information see xref:java:timed-actions.adoc[Timed actions].
+image:ROOT:timer.png[Timed actions,width=100,float=left] _Timed Actions_ allow for scheduling calls in the future. For example, to verify that some process have been completed or not. For more information see xref:java:timed-actions.adoc[Timed actions].
 
+// break the paragraph to avoid floating "Endpoints" on the image above.
+++++
+<br style="clear:both">
+++++
 === Endpoints
 
 image:ROOT:endpoint.png[Endpoints,width=100,float=left] _Endpoints_ are defined points of interaction for services that allow external clients to communicate via HTTP or gRPC. They facilitate the integration and communication between the other types of internal Akka components. Unlike other Akka components, endpoints will live in your `api` package. For more information see xref:java:http-endpoints.adoc[HTTP Endpoints] and xref:java:grpc-endpoints.adoc[gRPC Endpoints].
