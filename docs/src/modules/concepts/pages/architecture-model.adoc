@@ -110,7 +110,7 @@ image:ROOT:endpoint.png[Endpoints,width=100,float=left] _Endpoints_ are defined 
 
 == Akka Services
 
-A _Service_ is the base deployment unit in Akka. It includes the layers and packages described above. _Services_ are deployed to _Projects_. A project can contain multiple services, which can be deployed to one or more regions. For more about multi-region operations, see xref:multi-region.adoc[].
+image:ROOT:service.png[Services,width=100,float=left] A _Service_ is the base deployment unit in Akka. It includes the layers and packages described above. _Services_ are deployed to _Projects_. A project can contain multiple services, which can be deployed to one or more regions. For more about multi-region operations, see xref:multi-region.adoc[].
 
 == Next steps
 
