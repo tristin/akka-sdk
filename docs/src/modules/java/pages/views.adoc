@@ -2,7 +2,7 @@
 
 include::ROOT:partial$include.adoc[]
 
-Views allow you to access multiple entities or retrieve entities by attributes other than their _entity id_. You can create Views for different access patterns, optimized by specific queries, or combine multiple queries into a single View.
+image:ROOT:view.png[View,width=100,float=left] Views allow you to access multiple entities or retrieve entities by attributes other than their _entity id_. You can create Views for different access patterns, optimized by specific queries, or combine multiple queries into a single View.
 
 Views can be defined from any of the following:
 

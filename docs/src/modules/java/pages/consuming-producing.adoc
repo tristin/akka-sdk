@@ -2,7 +2,7 @@
 
 include::ROOT:partial$include.adoc[]
 
-Consuming and producing allow stream based interaction between services and also with the outside world. Consuming or publishing a stream of events is a common Microservices pattern. The source of events can be the journal of an Event Sourced Entity, the Key Value Entity state changes, a https://cloud.google.com/pubsub/docs/overview[Google Cloud Pub/Sub, window="new"] or https://kafka.apache.org/[Apache Kafka, window="new"] topic for asynchronous messaging between services.
+image:ROOT:consumer.png[Consumer,width=100,float=left]  Consuming and producing allow stream based interaction between services and also with the outside world. Consuming or publishing a stream of events is a common Microservices pattern. The source of events can be the journal of an Event Sourced Entity, the Key Value Entity state changes, a https://cloud.google.com/pubsub/docs/overview[Google Cloud Pub/Sub, window="new"] or https://kafka.apache.org/[Apache Kafka, window="new"] topic for asynchronous messaging between services.
 
 In this section, we will explore how you can use a Consumer component to:
 
