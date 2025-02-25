@@ -13,6 +13,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 
+/**
+ * Represents the query parameters of a request.
+ */
 public record QueryParams(Query query) {
 
   /**
