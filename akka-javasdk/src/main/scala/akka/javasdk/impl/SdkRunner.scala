@@ -63,6 +63,7 @@ import akka.javasdk.impl.eventsourcedentity.EventSourcedEntityImpl
 import akka.javasdk.impl.grpc.GrpcClientProviderImpl
 import akka.javasdk.impl.http.HttpClientProviderImpl
 import akka.javasdk.impl.http.JwtClaimsImpl
+import akka.javasdk.impl.http.QueryParamsImpl
 import akka.javasdk.impl.keyvalueentity.KeyValueEntityImpl
 import akka.javasdk.impl.reflection.Reflect
 import akka.javasdk.impl.reflection.Reflect.Syntax.AnnotatedElementOps
@@ -752,12 +753,7 @@ private final class Sdk(
         override def tracing(): Tracing = new SpanTracingImpl(context.openTelemetrySpan, sdkTracerFactory)
 
         override def queryParams(): QueryParams = {
-          context.httpRequest.uri.rawQueryString match {
-            case Some(queryString) =>
-              new QueryParams(Query.create(queryString))
-            case None =>
-              new QueryParams(Query.EMPTY)
-          }
+          QueryParamsImpl(context.httpRequest.uri.query())
         }
       }
       val instance = wiredInstance(httpEndpointClass) {

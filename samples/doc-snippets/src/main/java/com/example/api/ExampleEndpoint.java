@@ -23,7 +23,6 @@ import akka.javasdk.http.HttpException;
 import akka.javasdk.http.HttpResponses;
 import akka.stream.Materializer;
 import akka.stream.javadsl.Source;
-import com.fasterxml.jackson.core.JsonProcessingException;
 
 import java.time.Duration;
 import java.util.concurrent.CompletionStage;
@@ -171,7 +170,7 @@ public class ExampleEndpoint extends AbstractHttpEndpoint { // <1>
   // tag::query-params[]
   @Get("/hello-query-params-from-context")
   public String queryParamsFromContext() {
-    var name = requestContext().queryParams().get("name").orElse(""); // <1>
+    var name = requestContext().queryParams().getString("name").orElse(""); // <1>
     return "Hello " + name + "!";
   }
   // end::query-params[]
