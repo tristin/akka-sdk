@@ -156,7 +156,7 @@ include::example$event-sourced-customer-registry-subscriber/src/main/java/custom
 <4> The result of a request is either `CompletionStage<T>` with the result
 <5> Once the response arrives, turn it into our own response.
 
-TIP: If you're looking to test this locally, you will likely need to run the 2 services with different ports. For more details, consult xref:running-locally.adoc#_running_multiple_services_locally[Running multiple services].
+TIP: If you're looking to test this locally, you will likely need to run the 2 services with different ports. For more details, consult xref:running-locally.adoc#multiple_services[Running multiple services].
 
 It is also possible to interact with arbitrary non-Akka services using the `HttpClientProvider`, for such use,
 pass a string with `https://example.com` or `http://example.com` instead of a service name.

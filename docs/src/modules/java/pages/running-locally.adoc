@@ -105,7 +105,7 @@ For Google PubSub Emulator, use `akka.javasdk.dev-mode.eventing.support=google-p
 
 NOTE: For Kafka, the local Kafka broker is expected to be available on `localhost:9092`. For Google PubSub, the emulator is expected to be available on `localhost:8085`.
 
-
+[#multiple_services]
 == Running multiple services locally
 
 A typical application is composed of one or more services deployed to the same Akka project. When deployed under the same project, two different services can make xref:component-and-service-calls.adoc[calls to each other] or xref:consuming-producing.adoc[subscribe to each other's event streams] by simply using their logical names.
