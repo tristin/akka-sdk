@@ -1,28 +1,28 @@
 = Configure message brokers
 include::ROOT:partial$include.adoc[]
 
-Akka eventing integrates with https://cloud.google.com/pubsub/docs/overview[Google Cloud Pub/Sub, window="new"] and managed Kafka services such as https://www.confluent.io/confluent-cloud[Confluent Cloud, window="new"] and https://aiven.io/kafka[Aiven for Apache Kafka, window="new"] to enable asynchronous messaging.
+Akka eventing integrates with _Google Cloud Pub/Sub_ and managed Kafka services such as _Confluent Cloud_, _Amazon Managed Streaming for Apache Kafka (Amazon MSK)_, and _Aiven for Apache Kafka_ to enable asynchronous messaging and integrations with other systems.
 
-Message brokers are configured on Akka Project level. A project can have one broker configuration, Akka eventing is independent of the broker technology.
+Message brokers are configured at the Akka project level. A project can have one broker configuration. Akka eventing is independent of the broker technology.
 
 == Broker services
 
-- xref:operations:projects/broker-aiven.adoc[Aiven for Apache Kafka]
-- xref:operations:projects/broker-aws-msk.adoc[AWS MSK Kafka]
-- xref:operations:projects/broker-confluent.adoc[Confluent Cloud]
+Follow the detailed steps to configure the desired message broker service for use with your Akka project:
+
 - xref:operations:projects/broker-google-pubsub.adoc[Google Pub/Sub]
+- xref:operations:projects/broker-confluent.adoc[Confluent Cloud]
+- xref:operations:projects/broker-aws-msk.adoc[Amazon MSK]
+- xref:operations:projects/broker-aiven.adoc[Aiven for Apache Kafka]
 
-[#_testing]
-== Testing Akka eventing
+We continuously evaluate additional integrations for potential built-in support in Akka. If you have specific requirements, please contact us at mailto:support@akka.io[].
 
-The Java SDK testkit has built-in support to simulate message brokers. See xref:java:consuming-producing.adoc#testing[Testing the Integration].
-
-For running locally with a broker, see xref:java:running-locally.adoc#_local_broker_support[running a service with broker support].
+For running Akka services that integrate with a message broker locally, see xref:java:running-locally.adoc#_local_broker_support[running a service with broker support].
 
 [#_see_also]
-
-
-
 == See also
 
 - xref:reference:cli/akka-cli/akka_projects_config.adoc#_see_also[`akka projects config` commands]
+- https://cloud.google.com/pubsub/docs/overview[Google Cloud Pub/Sub, window="new"]
+- https://www.confluent.io/confluent-cloud[Confluent Cloud, window="new"]
+- https://aws.amazon.com/msk/[Amazon MSK, window="new"]
+- https://aiven.io/kafka[Aiven for Apache Kafka, window="new"]
