@@ -2,7 +2,7 @@
 
 include::ROOT:partial$include.adoc[]
 
-image:ROOT:consumer.png[Consumer,width=100,float=left]  Consuming and producing allow stream based interaction between services and also with the outside world. Consuming or publishing a stream of events is a common Microservices pattern. The source of events can be the journal of an Event Sourced Entity, the Key Value Entity state changes, or a message broker topic for asynchronous messaging between services and other systems.
+image:ROOT:consumer.png[Consumer,width=100,float=left]  Consuming or producing a stream of events is a common Microservices pattern. It allows stream-based interaction between Akka services and other systems. The source of events can be the journal of an Event Sourced Entity, state changes in a Key Value Entity, or a message broker topic.
 
 In this section, we will explore how you can use a Consumer component to:
 
