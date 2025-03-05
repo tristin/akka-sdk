@@ -88,8 +88,8 @@ jobs:
           GH_TOKEN: ${{ secrets.AKKA_SAMPLES_RW_ACCESS_TOKEN }}
         run: |
           cd akka-samples-${{ matrix.sample }}
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "lightbend-tools-secure"
+          git config user.email "lightbend-tools-secure@lightbend.com"
           git remote add origin-rw https://${{ secrets.AKKA_SAMPLES_RW_ACCESS_TOKEN }}@github.com/${{ matrix.sampleRepo }}.git
           BRANCH=update-sdk-${SDK_VERSION}
           git checkout -b $BRANCH
