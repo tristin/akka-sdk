@@ -50,7 +50,7 @@ jobs:
 
       - name: Bundle sample
         run: |-
-          sdk_version="$(./docs/bin/version.sh")"
+          sdk_version=`./docs/bin/version.sh`
           echo "Updating ${{ matrix.sample }} to sdk $sdk_version"
           ./docs/bin/bundle.sh --zip "target/bundle/${{ matrix.sample }}.zip" samples/${{ matrix.sample }}
 
@@ -68,7 +68,7 @@ jobs:
           COMMIT_URL: "https://github.com/${{ github.repository }}/commit/"
           GH_TOKEN: ${{ secrets.AKKA_SAMPLES_RW_ACCESS_TOKEN }}
         run: |
-          sdk_version="$(./docs/bin/version.sh")"
+          sdk_version=`./docs/bin/version.sh`
           cd akka-samples-${{ matrix.sample }}
           git config user.name "lightbend-tools-secure"
           git config user.email "lightbend-tools-secure@lightbend.com"
