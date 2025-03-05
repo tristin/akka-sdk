@@ -52,6 +52,7 @@ jobs:
         run: |-
           sdk_version=`./docs/bin/version.sh`
           echo "Updating ${{ matrix.sample }} to sdk $sdk_version"
+          # bundle will replace sdk version and remove doc tags
           ./docs/bin/bundle.sh --zip "target/bundle/${{ matrix.sample }}.zip" samples/${{ matrix.sample }}
 
       - name: Checkout
@@ -79,6 +80,6 @@ jobs:
           rm -f .bundleignore
           git add .
           git commit . -m "chore: bump SDK version to $sdk_version"
-          #git push --set-upstream origin-rw $BRANCH
-          #gh pr create -B main -t "Auto PR - Bump SDK version to $sdk_version" \
-          #    -b "This PR should update SDK (pom.xml) and latest source code.  [$GITHUB_SHA]($COMMIT_URL$GITHUB_SHA)"
+          git push --set-upstream origin-rw $BRANCH
+          gh pr create -B main -t "Auto PR - Bump SDK version to $sdk_version" \
+              -b "This PR should update SDK (pom.xml) and latest source code.  [$GITHUB_SHA]($COMMIT_URL$GITHUB_SHA)"
