@@ -48,26 +48,10 @@ jobs:
         with:
           jvm: temurin:1.21
 
-      - name: Determine SDK version
-        id: determine_sdk_version
-        run: |-
-          .github/determine-sdk-version.sh
-          SDK_VERSION="$(cat ~/akka-javasdk-version.txt)"
-          echo "SDK version: '${SDK_VERSION}'"
-          echo "sdk_version=${SDK_VERSION}" >> $GITHUB_OUTPUT
-
-      - name: Determine SDK version (manual triggered) # provisional until normal flow gets fixed)
-        if:  github.event_name == 'workflow_dispatch'
-        id: determine_sdk_version_manual_triggered
-        run: |-
-          .github/determine-sdk-version.sh
-          SDK_VERSION="$(cat ~/akka-javasdk-version.txt | sed 's/-.*//')"
-          echo "SDK version: '${SDK_VERSION}'"
-          echo "sdk_version=${SDK_VERSION}" >> $GITHUB_OUTPUT
-
       - name: Bundle sample
         run: |-
-          echo "Updating ${{ matrix.sample }}"
+          sdk_version="$(./docs/bin/version.sh")"
+          echo "Updating ${{ matrix.sample }} to sdk $sdk_version"
           ./docs/bin/bundle.sh --zip "target/bundle/${{ matrix.sample }}.zip" samples/${{ matrix.sample }}
 
       - name: Checkout
@@ -81,20 +65,20 @@ jobs:
 
       - name: Open PR with changes
         env:
-          SDK_VERSION: ${{ steps.determine_sdk_version.outputs.sdk_version || steps.determine_sdk_version_manual_triggered.outputs.sdk_version }}
           COMMIT_URL: "https://github.com/${{ github.repository }}/commit/"
           GH_TOKEN: ${{ secrets.AKKA_SAMPLES_RW_ACCESS_TOKEN }}
         run: |
+          sdk_version="$(./docs/bin/version.sh")"
           cd akka-samples-${{ matrix.sample }}
           git config user.name "lightbend-tools-secure"
           git config user.email "lightbend-tools-secure@lightbend.com"
           git remote add origin-rw https://${{ secrets.AKKA_SAMPLES_RW_ACCESS_TOKEN }}@github.com/${{ matrix.sampleRepo }}.git
-          BRANCH=update-sdk-${SDK_VERSION}
+          BRANCH=update-sdk-$sdk_version
           git checkout -b $BRANCH
           rsync -a ../docs/build/bundle/${{ matrix.sample }}/ ./
           rm -f .bundleignore
           git add .
-          git commit . -m "chore: bump SDK version to ${SDK_VERSION}"
+          git commit . -m "chore: bump SDK version to $sdk_version"
           git push --set-upstream origin-rw $BRANCH
-          gh pr create -B main -t "Auto PR - Bump SDK version to ${SDK_VERSION}" \
+          gh pr create -B main -t "Auto PR - Bump SDK version to $sdk_version" \
               -b "This PR should update SDK (pom.xml) and latest source code.  [$GITHUB_SHA]($COMMIT_URL$GITHUB_SHA)"
