@@ -17,10 +17,16 @@ jobs:
           echo "Conclusion from `Publish` workflow: ${{ github.event.workflow_run.conclusion }}
           echo "Tag created from `Publish` workflow: ${{ github.ref }}
 
-  open-pr-update-sample:
+  update-samples:
     runs-on: ubuntu-22.04
     # run only when `publish` workflow is successful or this workflow manually triggered
-    if: (github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
+    if: (github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { sample: "shopping-cart-quickstart", sampleRepo: "akka-samples/shopping-cart-quickstart" }
+
     steps:
       - name: Checkout
         # https://github.com/actions/checkout/releases
@@ -59,19 +65,37 @@ jobs:
           echo "SDK version: '${SDK_VERSION}'"
           echo "sdk_version=${SDK_VERSION}" >> $GITHUB_OUTPUT
 
-      - name: Create PR to update all sdk versions (samples, sbt and maven)
+      - name: Update SDK versions and bundle
         env:
           SDK_VERSION: ${{ steps.determine_sdk_version.outputs.sdk_version || steps.determine_sdk_version_manual_triggered.outputs.sdk_version }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |-
           echo "Updating samples to version ${SDK_VERSION}"
-          ./updateSdkVersions.sh all
-          BRANCH=bump-sdk-versions-${SDK_VERSION}
-          git checkout -b ${BRANCH}
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit . -m "chore: bump SDK versions to ${SDK_VERSION}"
-          git remote add origin-rw https://${GH_TOKEN}@github.com/akka/akka-sdk
-          git push --set-upstream origin-rw ${BRANCH}
-        
-          gh pr create -B main -t "Auto PR - Bump SDK versions to ${SDK_VERSION}" -b "This PR should update all existing samples (pom.xml and plugins.sbt) and the maven poms. Please review, and merge if okay." || echo "No changes"; exit 0
+          #./updateSdkVersions.sh all
+          ./docs/bin/bundle.sh --zip "target/bundle/${{ matrix.sample }}.zip" samples/${{ matrix.sample }}
+
+      - name: Checkout
+        # https://github.com/actions/checkout/releases/tag/v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: ${{ matrix.sampleRepo }}
+          path: akka-samples-${{ matrix.sample }}
+          token: ${{ secrets.AKKA_SDK_RW_ACCESS_TOKEN }}
+          ref: main
+
+      - name: Open PR with changes
+        env:
+          COMMIT_URL: "https://github.com/${{ github.repository }}/commit/"
+          GH_TOKEN: ${{ secrets.AKKA_SAMPLES_RW_ACCESS_TOKEN }}
+        run: |
+          cd akka-samples-${{ matrix.sample }}
+          git config user.name "akka-ci"
+          git config user.email "akka-ci@users.noreply.github.com"
+          git remote add origin-rw https://${{ secrets.AKKA_SAMPLES_RW_ACCESS_TOKEN }}@github.com/${{ matrix.sampleRepo }}.git
+          BRANCH=update-sdk-${SDK_VERSION}
+          git checkout -b $BRANCH
+          rsync -a ../docs/build/bundle${{ matrix.sample }}/ ./
+          git add .
+          git commit . -m "chore: bump SDK version to ${SDK_VERSION}"
+          git push --set-upstream origin-rw $BRANCH
+          gh pr create -B main -t "Auto PR - Bump SDK version to ${SDK_VERSION}" \
+              -b "This PR should update SDK (pom.xml) and latest source code.  [$GITHUB_SHA]($COMMIT_URL$GITHUB_SHA)"
