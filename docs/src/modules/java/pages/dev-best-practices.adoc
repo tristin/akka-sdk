@@ -50,7 +50,7 @@ Deciding how many components and concepts to fit into a single service can be co
 
 == Messages deduplication
 
-In the realm of distributed systems, Akka 3 embraces an at-least-once delivery guarantee, for components like Consumer or Views (view updaters). Message redeliveries are not just possible, but inevitable.
+In the realm of distributed systems, Akka embraces an at-least-once delivery guarantee, for components like Consumer or Views (view updaters). Message redeliveries are not just possible, but inevitable.
 
 NOTE: When consuming from Akka components like Event Sourced Entity, Key Value Entity or another Akka service, the Akka runtime not only guarantees at-least-once delivery, but also the order of messages. Meaning that a series of duplicated messages might be redelivered but always in the same order as they were produced.
 
@@ -119,7 +119,7 @@ include::example$event-sourced-counter-brokers/src/main/java/counter/application
 
 For cases when events enrichment is not possible or not desired, a sequence number tracking can be used. The idea is to keep track of the sequence number of the last processed event and ignore any events with a sequence number lower or equal than the last processed one.
 
-NOTE: A monotonically increased sequence number is available only when consuming updates from Akka 3 components like Event Sourced Entity, Key Value Entity, or another Akka service. The sequence number is *not globally unique*, but unique per entity instance.
+NOTE: A monotonically increased sequence number is available only when consuming updates from Akka components like Event Sourced Entity, Key Value Entity, or another Akka service. The sequence number is *not globally unique*, but unique per entity instance.
 
 [source,java,indent=0]
 .{sample-base-url}/event-sourced-counter-brokers/src/main/java/counter/application/CounterByValueViewDeduplication.java[CounterByValueViewDeduplication.java]
@@ -136,7 +136,7 @@ Keep in mind that a View row corresponds to a single entity instance, that's why
 
 The same technique can be used not only for the Akka Views, but for any external storage mechanism. As the matter of fact, Akka Views has a built-in support for sequence number tracking, so you don't have to implement it yourself. The example above just shows how it can be done manually.
 
-NOTE: Akka View component has a built-in support for sequence number tracking. {sample-base-url}/event-sourced-counter-brokers/src/test/java/counter/application/.CounterByValueViewTest.java[CounterByValueViewTest] demonstrates how it can be verified.
+NOTE: Akka View component has a built-in support for sequence number tracking. {sample-base-url}/event-sourced-counter-brokers/src/test/java/counter/application/CounterByValueViewTest.java[CounterByValueViewTest] demonstrates how it can be verified.
 
 ==== Benefits
  - Tracking sequence numbers is very effective and the additional storage overhead is minimal.
