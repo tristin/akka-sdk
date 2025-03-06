@@ -25,13 +25,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { sample: "choreography-saga-quickstart", sampleRepo: "akka-samples/choreography-saga-quickstart" }
+          #- { sample: "choreography-saga-quickstart", sampleRepo: "akka-samples/choreography-saga-quickstart" }
           - { sample: "endpoint-jwt", sampleRepo: "akka-samples/endpoint-jwt" }
           - { sample: "event-sourced-counter-brokers", sampleRepo: "akka-samples/event-sourced-counter-brokers" }
-          - { sample: "event-sourced-customer-registry", sampleRepo: "akka-samples/event-sourced-customer-registry" }
+          #- { sample: "event-sourced-customer-registry", sampleRepo: "akka-samples/event-sourced-customer-registry" }
           #- { sample: "shopping-cart-quickstart", sampleRepo: "akka-samples/shopping-cart-quickstart" }
           - { sample: "transfer-workflow", sampleRepo: "akka-samples/transfer-workflow" }
-          - { sample: "transfer-workflow-compensation", sampleRepo: "akka-samples/transfer-workflow-compensation" }
+          #- { sample: "transfer-workflow-compensation", sampleRepo: "akka-samples/transfer-workflow-compensation" }
 
     steps:
       - name: Checkout
