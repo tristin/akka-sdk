@@ -48,6 +48,7 @@ Deciding how many components and concepts to fit into a single service can be co
 - *You gain security*. Services serve as a security boundary both in your system overall and between teams.
 - *You get granular visibility into costs*. Services are all billed separately, so it's easier to see and understand costs and billing on a per-service basis if you break your services up in some way that matches your organizational needs overall.
 
+[#message-deduplication]
 == Messages deduplication
 
 In the realm of distributed systems, Akka embraces an at-least-once delivery guarantee, for components like Consumer or Views (view updaters). Message redeliveries are not just possible, but inevitable.
@@ -121,22 +122,33 @@ For cases when events enrichment is not possible or not desired, a sequence numb
 
 NOTE: A monotonically increased sequence number is available only when consuming updates from Akka components like Event Sourced Entity, Key Value Entity, or another Akka service. The sequence number is *not globally unique*, but unique per entity instance.
 
+NOTE: Akka View component has a built-in support for sequence number tracking. {sample-base-url}/event-sourced-counter-brokers/src/test/java/counter/application/CounterByValueViewTest.java[CounterByValueViewTest] demonstrates how it can be verified.
+
+Let's assume that we want to populate a view storage outside Akka ecosystem. To focus on the deduplication aspect, the following snippet shows the in-memory implementation of the `CounterStore`.
+
 [source,java,indent=0]
-.{sample-base-url}/event-sourced-counter-brokers/src/main/java/counter/application/CounterByValueViewDeduplication.java[CounterByValueViewDeduplication.java]
+.{sample-base-url}/event-sourced-counter-brokers/src/main/java/counter/application/CounterStore.java[CounterStore.java]
 ----
-include::example$event-sourced-counter-brokers/src/main/java/counter/application/CounterByValueViewDeduplication.java[tag=seq-tracking]
+include::example$event-sourced-counter-brokers/src/main/java/counter/application/CounterStore.java[tag=seq-tracking]
 ----
 <1> A view model keeps track of the last processed sequence number.
-<2> When sequence number is not available there is no deduplication.
-<3> When sequence number is lower or equal to the last processed one the event is ignored.
+
+The Consumer component, uses sequence number for tracking deduplicated events.
+
+[source,java,indent=0]
+.{sample-base-url}/event-sourced-counter-brokers/src/main/java/counter/application/CounterStoreUpdater.java[CounterStoreUpdater.java]
+----
+include::example$event-sourced-counter-brokers/src/main/java/counter/application/CounterStoreUpdater.java[tag=seq-tracking]
+----
+<1> Loads the existing entry for a given entity ID.
+<2> When sequence number is not available deduplication is disabled.
+<3> When sequence number is lower or equal to the last processed one, the event is ignored.
 <4> Otherwise, the event is processed and the last processed sequence number is updated.
 <5> Updates are not idempotent, but the deduplication mechanism ensures that the view is correct in case of processing duplicates.
 
-Keep in mind that a View row corresponds to a single entity instance, that's why we can use the sequence number as a deduplication token.
+Keep in mind that the `CounterEntry` corresponds to a single entity instance, that's why we can use the sequence number as a deduplication token.
 
-The same technique can be used not only for the Akka Views, but for any external storage mechanism. As the matter of fact, Akka Views has a built-in support for sequence number tracking, so you don't have to implement it yourself. The example above just shows how it can be done manually.
-
-NOTE: Akka View component has a built-in support for sequence number tracking. {sample-base-url}/event-sourced-counter-brokers/src/test/java/counter/application/CounterByValueViewTest.java[CounterByValueViewTest] demonstrates how it can be verified.
+It's important to test your deduplication mechanism. The {sample-base-url}/event-sourced-counter-brokers/src/test/java/counter/application/CounterStoreUpdaterTest.java[CounterStoreUpdaterTest] demonstrates how it can be done with the `EventingTestKit`.
 
 ==== Benefits
  - Tracking sequence numbers is very effective and the additional storage overhead is minimal.
