@@ -19,7 +19,8 @@ public interface CloudEvent {
   String specversion();
 
   /**
-   * The id of this CloudEvent.
+   * The id of this CloudEvent. According to the CloudEvents https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md#id[specification],
+   * the ID is not guaranteed to be the same for redelivery of the same event, hence we can't use it for deduplication.
    *
    * @return The id.
    */

@@ -24,15 +24,6 @@ public class MyConsumer extends Consumer {
 
   private SomeService someService;
 
-  // tag::cloud-event-id[]
-  public Effect handleWithId(Event event) {
-    var token = messageContext().metadata()
-      .asCloudEvent().id(); // <1>
-    return effects().asyncDone(
-      someService.doSomething(event, token));
-  }
-  // end::cloud-event-id[]
-
   // tag::deterministic-hashing[]
   public Effect handle(Event event) {
     var entityId = messageContext().eventSubject().get();
