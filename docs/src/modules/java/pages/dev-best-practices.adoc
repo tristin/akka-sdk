@@ -49,7 +49,7 @@ Deciding how many components and concepts to fit into a single service can be co
 - *You get granular visibility into costs*. Services are all billed separately, so it's easier to see and understand costs and billing on a per-service basis if you break your services up in some way that matches your organizational needs overall.
 
 [#message-deduplication]
-== Deduplication
+== Message deduplication
 
 In the realm of distributed systems, Akka embraces an at-least-once delivery guarantee, for components like Consumer or Views (view updaters). Message redeliveries are not just possible, but inevitable.
 
@@ -63,14 +63,29 @@ There is no one-size-fits-all solution to this challenge. Usually it's a mix of 
 
 The most common approach to deduplication is to make the processing of messages idempotent. An idempotent operation is one that can be applied multiple times without changing the result beyond the initial application. This means that if the same message is processed multiple times, the result will be the same as if it were processed only once.
 
-[source,java,indent=0]
-.{sample-base-url}/event-sourced-customer-registry/src/main/java/customer/application/CustomerByEmailView.java[CustomerByEmailView.java]
-----
-include::example$event-sourced-customer-registry/src/main/java/customer/application/CustomerByEmailView.java[tag=idempotent-update]
-----
-<1> Processing each event is idempotent. Duplicated events will not change the state of the view.
+To demonstrate this, let's consider a simple example of a `CustomerStore` that persist customer data outside Akka ecosystem.
 
-==== Key Considerations:
+[source,java,indent=0]
+.{sample-base-url}/event-sourced-customer-registry/src/main/java/customer/application/CustomerStore.java[CustomerStore.java]
+----
+include::example$event-sourced-customer-registry/src/main/java/customer/application/CustomerStore.java[tag=idempotent-update]
+----
+
+A consumer implementation that updates such a store is written in an idempotent way.
+
+[source,java,indent=0]
+.{sample-base-url}/event-sourced-customer-registry/src/main/java/customer/application/CustomerStoreUpdater.java[CustomerStoreUpdater.java]
+----
+include::example$event-sourced-customer-registry/src/main/java/customer/application/CustomerStoreUpdater.java[tag=idempotent-update]
+----
+<1> Processing each event is idempotent. Duplicated events will not change the state of the store.
+
+Remember to test your idempotent operations. The {sample-base-url}/event-sourced-customer-registry/src/test/java/customer/application/CustomerStoreUpdaterTest.java[CustomerStoreUpdaterTest] demonstrates how it can be done with the `EventingTestKit`.
+
+NOTE: Consumers, Views, Workflows and Entities are single writers for a given entity id. There are no concurrent updates. Messages (events or commands) are processed sequentially by a single instance for the entity id. Therefore, there is no need for things like optimistic locking.
+
+*Key Considerations*
+
  - Ensure that operations like database inserts or state changes are idempotent.
  - Evaluate the trade-off between complexity and storage requirements for maintaining idempotency.
 
@@ -108,11 +123,13 @@ include::example$event-sourced-counter-brokers/src/main/java/counter/application
 ----
 <1> Using pre-calculated `currentValue` from the event.
 
-==== Benefits
+*Benefits*
+
  - Enables idempotent processing of enriched events.
  - Reduces coupling between producers and consumers.
 
-==== Challenges
+*Challenges*
+
  - Increases event size, requiring a balance between richness and efficiency.
  - Requires careful schema design and potential for schema evolution challenges
 
@@ -148,14 +165,14 @@ include::example$event-sourced-counter-brokers/src/main/java/counter/application
 
 Keep in mind that the `CounterEntry` corresponds to a single entity instance, that's why we can use the sequence number as a deduplication token.
 
-NOTE: Consumers, Views, Workflows and Entities are single writers for a given entity id. There are no concurrent updates. Messages (events or commands) are processed sequentially by a single instance for the entity id. Therefore, there is no need for things like optimistic locking.
-
 It's important to test your deduplication mechanism. The {sample-base-url}/event-sourced-counter-brokers/src/test/java/counter/application/CounterStoreUpdaterTest.java[CounterStoreUpdaterTest] demonstrates how it can be done with the `EventingTestKit`.
 
-==== Benefits
+*Benefits*
+
  - Tracking sequence numbers is very effective and the additional storage overhead is minimal.
 
-==== Challenges
+*Challenges*
+
  - Only works per entity instance, can't be used globally.
 
 === Deterministic hashing
@@ -172,15 +189,17 @@ include::example$doc-snippets/src/main/java/com/example/application/MyConsumer.j
 
 The token might be also xref:dev-best-practices.adoc#events-enrichment[precalculated] and stored in the event payload. In such case the consumer can use it directly.
 
-==== Benefits
+*Benefits*
+
 - Useful for cross-service or cross-component communication.
 
-==== Challenges
+*Challenges*
+
 - Choosing the right hashing algorithm (e.g., SHA-256 vs. MD5) for a balance between collision resistance and performance.
 - The receiver must be able to deduplicate based on the token, which, in most cases, has same limitations. See xref:request-deduplication[request deduplication].
 
 [#request-deduplication]
-=== Request deduplication
+== Request deduplication
 
 A different aspect of deduplication is how to deal with, possibly duplicated, incoming commands that mutate Akka stateful components. Let's examine this based on a `WalletEntity` example.
 
@@ -223,10 +242,12 @@ Production ready deduplication should take into account these limitations in the
 
 Keep in mind that using collection types not supported by the Jackson serialization will require a custom serialization for that field. See `@JsonSerialize` annotation for more details.
 
-==== Benefits
+*Benefits*
+
 - Solution doesn't require additional infrastructure to store already processed command IDs.
 
-==== Challenges
+*Challenges*
+
  - Memory and storage requirements for keeping command IDs.
  - Performance consideration for effective data structure for command IDs.
  - Custom serialization for non-standard collection types.
