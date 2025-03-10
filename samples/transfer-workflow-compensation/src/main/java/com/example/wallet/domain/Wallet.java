@@ -3,11 +3,11 @@ package com.example.wallet.domain;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 // tag::deduplication[]
-public record Wallet(String id, int balance, List<String> commandIds) { // <1>
+public record Wallet(String id, int balance, LinkedHashSet<String> commandIds) { // <1>
 
   // end::deduplication[]
 
@@ -16,7 +16,7 @@ public record Wallet(String id, int balance, List<String> commandIds) { // <1>
   public static final int COMMAND_IDS_MAX_SIZE = 1000;
 
   // end::deduplication[]
-  public static Wallet EMPTY = new Wallet("", 0, new ArrayList<>());
+  public static Wallet EMPTY = new Wallet("", 0, new LinkedHashSet<>());
 
   public boolean isEmpty(){
     return id.equals("");
@@ -42,7 +42,7 @@ public record Wallet(String id, int balance, List<String> commandIds) { // <1>
   public Wallet applyEvent(WalletEvent event) {
     return switch (event) {
       case WalletEvent.Created created ->
-        new Wallet(created.walletId(), created.initialBalance(), new ArrayList<>());
+        new Wallet(created.walletId(), created.initialBalance(), new LinkedHashSet<>());
       case WalletEvent.Withdrawn withdrawn ->
         new Wallet(id, balance - withdrawn.amount(), addCommandId(withdrawn.commandId()));
       case WalletEvent.Deposited deposited ->
@@ -50,7 +50,7 @@ public record Wallet(String id, int balance, List<String> commandIds) { // <1>
     };
   }
 
-  private List<String> addCommandId(String commandId) {
+  private LinkedHashSet<String> addCommandId(String commandId) {
     // end::deduplication[]
     // To avoid infinite growth of the list with limit the size to 1000.
     // This implementation is not very efficient, so you might want to use a more dedicated data structure for it.
