@@ -131,7 +131,7 @@ Let's assume that we want to populate a view storage outside Akka ecosystem. To 
 ----
 include::example$event-sourced-counter-brokers/src/main/java/counter/application/CounterStore.java[tag=seq-tracking]
 ----
-<1> A view model keeps track of the last processed sequence number.
+<1> A read model keeps track of the last processed sequence number.
 
 The Consumer component, uses sequence number for tracking deduplicated events.
 

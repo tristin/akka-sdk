@@ -35,7 +35,7 @@ public record Wallet(String id, int balance, LinkedHashSet<String> commandIds) {
         List.of(new WalletEvent.Withdrawn(command.commandId(), withdraw.amount())); // <3>
     };
   }
-  // tag::deduplication[]
+  // end::deduplication[]
 
 
   // tag::deduplication[]
