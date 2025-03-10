@@ -177,7 +177,7 @@ The token might be also xref:dev-best-practices.adoc#events-enrichment[precalcul
 
 ==== Challenges
 - Choosing the right hashing algorithm (e.g., SHA-256 vs. MD5) for a balance between collision resistance and performance.
-- The receiver must be able to deduplicate based on the token, which, is most cases, has same limitations. See xref:request-deduplication[request deduplication].
+- The receiver must be able to deduplicate based on the token, which, in most cases, has same limitations. See xref:request-deduplication[request deduplication].
 
 [#request-deduplication]
 == Request deduplication
