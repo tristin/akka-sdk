@@ -43,12 +43,14 @@ public class CounterEndpoint {
   }
   // end::endpoint-component-interaction[]
 
+  //tag::increaseWithError[]
   @Post("/{counterId}/increase-with-error/{value}")
   public CompletionStage<Integer> increaseWithError(String counterId, Integer value) {
     return componentClient.forEventSourcedEntity(counterId)
       .method(CounterEntity::increaseWithError)
       .invokeAsync(value); // <1>
   }
+  //end::increaseWithError[]
 
   //tag::increaseWithResult[]
   @Post("/{counterId}/increase-with-result/{value}")

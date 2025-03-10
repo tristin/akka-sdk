@@ -47,15 +47,19 @@ public class CounterEntity extends EventSourcedEntity<Integer, CounterEvent> {
       .thenReply(identity());
   }
 
+  //tag::increaseWithError[]
   public Effect<Integer> increaseWithError(Integer value) {
     if (currentState() + value > 10000) {
       return effects().error("Increasing the counter above 10000 is blocked"); // <1>
     }
+    //end::increaseWithError[]
     logger.info("Counter {} increased by {}", this.commandContext().entityId(), value);
+    //tag::increaseWithError[]
     return effects()
       .persist(new ValueIncreased(value, currentState() + value))
       .thenReply(identity());
   }
+  //end::increaseWithError[]
 
   //tag::increaseWithResult[]
   public Effect<CounterResult> increaseWithResult(Integer value) {

@@ -49,7 +49,7 @@ Deciding how many components and concepts to fit into a single service can be co
 - *You get granular visibility into costs*. Services are all billed separately, so it's easier to see and understand costs and billing on a per-service basis if you break your services up in some way that matches your organizational needs overall.
 
 [#message-deduplication]
-== Messages deduplication
+== Deduplication
 
 In the realm of distributed systems, Akka embraces an at-least-once delivery guarantee, for components like Consumer or Views (view updaters). Message redeliveries are not just possible, but inevitable.
 
@@ -180,7 +180,7 @@ The token might be also xref:dev-best-practices.adoc#events-enrichment[precalcul
 - The receiver must be able to deduplicate based on the token, which, in most cases, has same limitations. See xref:request-deduplication[request deduplication].
 
 [#request-deduplication]
-== Request deduplication
+=== Request deduplication
 
 A different aspect of deduplication is how to deal with, possibly duplicated, incoming commands that mutate Akka stateful components. Let's examine this based on a `WalletEntity` example.
 
