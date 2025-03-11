@@ -87,6 +87,7 @@ import akka.runtime.sdk.spi.ConsumerDescriptor
 import akka.runtime.sdk.spi.EventSourcedEntityDescriptor
 import akka.runtime.sdk.spi.GrpcEndpointRequestConstructionContext
 import akka.runtime.sdk.spi.HttpEndpointConstructionContext
+import akka.runtime.sdk.spi.RegionInfo
 import akka.runtime.sdk.spi.RemoteIdentification
 import akka.runtime.sdk.spi.SpiComponents
 import akka.runtime.sdk.spi.SpiDevModeSettings
@@ -177,12 +178,12 @@ class SdkRunner private (dependencyProvider: Option[DependencyProvider], disable
       ApplicationConfig(startContext.system).overrideConfig(applicationConfig)
       val app = new Sdk(
         startContext.system,
-        startContext.sdkDispatcherName,
         startContext.executionContext,
         startContext.materializer,
         startContext.componentClients,
         startContext.remoteIdentification,
         startContext.tracerFactory,
+        startContext.regionInfo,
         dependencyProvider,
         disabledComponents,
         startedPromise,
@@ -323,12 +324,12 @@ private[javasdk] object Sdk {
 @InternalApi
 private final class Sdk(
     system: ActorSystem[_],
-    sdkDispatcherName: String,
     sdkExecutionContext: ExecutionContext,
     sdkMaterializer: Materializer,
     runtimeComponentClients: ComponentClients,
     remoteIdentification: Option[RemoteIdentification],
     tracerFactory: String => Tracer,
+    regionInfo: RegionInfo,
     dependencyProviderOverride: Option[DependencyProvider],
     disabledComponents: Set[Class[_]],
     startedPromise: Promise[StartupContext],
@@ -416,6 +417,7 @@ private final class Sdk(
       timerClient = runtimeComponentClients.timerClient,
       sdkExecutionContext,
       sdkTracerFactory,
+      regionInfo,
       { context =>
 
         val workflow = wiredInstance(clz) {
@@ -491,6 +493,7 @@ private final class Sdk(
             serializer,
             ComponentDescriptor.descriptorFor(clz, serializer),
             entityStateType,
+            regionInfo,
             context =>
               wiredInstance(clz.asInstanceOf[Class[EventSourcedEntity[AnyRef, AnyRef]]]) {
                 // remember to update component type API doc and docs if changing the set of injectables
@@ -527,6 +530,7 @@ private final class Sdk(
             serializer,
             ComponentDescriptor.descriptorFor(clz, serializer),
             entityStateType,
+            regionInfo,
             context =>
               wiredInstance(clz.asInstanceOf[Class[KeyValueEntity[AnyRef]]]) {
                 // remember to update component type API doc and docs if changing the set of injectables
@@ -572,6 +576,7 @@ private final class Sdk(
             sdkExecutionContext,
             sdkTracerFactory,
             serializer,
+            regionInfo,
             ComponentDescriptor.descriptorFor(timedActionClass, serializer))
         timedActionDescriptors :+=
           new TimedActionDescriptor(componentId, clz.getName, timedActionSpi)
@@ -592,7 +597,8 @@ private final class Sdk(
             sdkTracerFactory,
             serializer,
             ComponentDescriptorFactory.findIgnore(consumerClass),
-            ComponentDescriptor.descriptorFor(consumerClass, serializer))
+            ComponentDescriptor.descriptorFor(consumerClass, serializer),
+            regionInfo)
         consumerDescriptors :+=
           new ConsumerDescriptor(
             componentId,
@@ -602,7 +608,7 @@ private final class Sdk(
             consumerSpi)
 
       case clz if classOf[View].isAssignableFrom(clz) =>
-        viewDescriptors :+= ViewDescriptorFactory(clz, serializer, sdkExecutionContext)
+        viewDescriptors :+= ViewDescriptorFactory(clz, serializer, regionInfo, sdkExecutionContext)
 
       case clz if Reflect.isRestEndpoint(clz) =>
       // handled separately because ComponentId is not mandatory
@@ -755,6 +761,8 @@ private final class Sdk(
         override def queryParams(): QueryParams = {
           QueryParamsImpl(context.httpRequest.uri.query())
         }
+
+        override def selfRegion(): String = regionInfo.selfRegion
       }
       val instance = wiredInstance(httpEndpointClass) {
         sideEffectingComponentInjects(context.openTelemetrySpan).orElse {
@@ -786,6 +794,8 @@ private final class Sdk(
         override def metadata(): Metadata = new JavaMetadataImpl(context.metadata)
 
         override def tracing(): Tracing = new SpanTracingImpl(context.openTelemetrySpan, sdkTracerFactory)
+
+        override def selfRegion(): String = regionInfo.selfRegion
       }
 
       val instance = wiredInstance(grpcEndpointClass) {

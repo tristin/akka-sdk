@@ -2,9 +2,10 @@ package com.example;
 
 import akka.javasdk.Metadata;
 import akka.javasdk.testkit.TestKitSupport;
-import com.example.application.ShoppingCartDTO;
-import com.example.application.ShoppingCartDTO.LineItemDTO;
+import com.example.api.ShoppingCartDTO;
+import com.example.api.ShoppingCartDTO.LineItemDTO;
 import com.example.application.ShoppingCartEntity;
+import com.example.domain.ShoppingCart;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -19,7 +20,7 @@ public class ShoppingCartIntegrationTest extends TestKitSupport {
 
   private Duration timeout = Duration.of(5, SECONDS);
 
-  ShoppingCartDTO getCart(String cartId) {
+  ShoppingCart getCart(String cartId) {
     return await(
       componentClient
         .forKeyValueEntity(cartId)
@@ -32,7 +33,7 @@ public class ShoppingCartIntegrationTest extends TestKitSupport {
       componentClient
         .forKeyValueEntity(cartId)
         .method(ShoppingCartEntity::addItem)
-        .invokeAsync(new LineItemDTO(productId, name, quantity))
+        .invokeAsync(new ShoppingCart.LineItem(productId, name, quantity))
     );
   }
 
@@ -57,8 +58,8 @@ public class ShoppingCartIntegrationTest extends TestKitSupport {
     );
   }
 
-  LineItemDTO item(String productId, String name, int quantity) {
-    return new LineItemDTO(productId, name, quantity);
+  ShoppingCart.LineItem item(String productId, String name, int quantity) {
+    return new ShoppingCart.LineItem(productId, name, quantity);
   }
 
 

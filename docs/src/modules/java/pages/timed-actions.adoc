@@ -2,7 +2,7 @@
 
 include::ROOT:partial$include.adoc[]
 
-Timers enable the scheduling of calls for future execution, making them particularly useful for verifying the completion status of processes at a later time.
+image:ROOT:timer.png[Timer,width=100,float=left] Timers enable the scheduling of calls for future execution, making them particularly useful for verifying the completion status of processes at a later time.
 
 Timers are stored by the xref:reference:glossary.adoc#runtime[Akka Runtime] and are guaranteed to run at least once.
 
