@@ -7,12 +7,12 @@
     <parent>
         <groupId>io.akka</groupId>
         <artifactId>akka-javasdk-maven</artifactId>
-        <version>3.2.0</version>
+        <version>3.2.1</version>
     </parent>
 
     <groupId>io.akka</groupId>
     <artifactId>akka-javasdk-parent</artifactId>
-    <version>3.2.0</version>
+    <version>3.2.1</version>
     <packaging>pom</packaging>
 
 
@@ -34,13 +34,13 @@
 
         <maven.build.timestamp.format>yyyyMMddHHmmss</maven.build.timestamp.format>
 
-        <akka-javasdk.version>3.2.0</akka-javasdk.version>
+        <akka-javasdk.version>3.2.1</akka-javasdk.version>
         <!-- must be carefully kept in sync with sdk and runtime version -->
         <akka.grpc.version>2.5.3</akka.grpc.version>
 
         <!-- These are dependent on runtime environment and cannot be customized by users -->
         <maven.compiler.release>21</maven.compiler.release>
-        <kalix-runtime.version>1.3.6</kalix-runtime.version>
+        <kalix-runtime.version>1.4.2</kalix-runtime.version>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <skip.docker>false</skip.docker>
@@ -228,11 +228,11 @@
                 </plugin>
 
                 <plugin>
-                    <!-- configure src/it/java and src/it/resources -->
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>build-helper-maven-plugin</artifactId>
                     <version>${build-helper-maven-plugin.version}</version>
                     <executions>
+                        <!-- configure src/it/java and src/it/resources legacy paths for integration tests -->
                         <execution>
                             <id>add-integration-test-source</id>
                             <phase>generate-test-sources</phase>
@@ -257,6 +257,19 @@
                                         <directory>${basedir}/src/it/resources</directory>
                                     </resource>
                                 </resources>
+                            </configuration>
+                        </execution>
+                        <!-- add generated protobuf and gRPC sources so that IntelliJ finds them automatically -->
+                        <execution>
+                            <id>add-java-source</id>
+                            <phase>generate-sources</phase>
+                            <goals>
+                                <goal>add-source</goal>
+                            </goals>
+                            <configuration>
+                                <sources>
+                                    <source>${project.build.directory}/generated-sources/akka-grpc-java</source>
+                                </sources>
                             </configuration>
                         </execution>
                     </executions>
@@ -313,6 +326,7 @@
                     <version>3.4.1</version>
                     <configuration>
                         <mainClass>kalix.runtime.AkkaRuntimeMain</mainClass>
+                        <cleanupDaemonThreads>false</cleanupDaemonThreads>
                         <systemProperties>
                             <systemProperty>
                                 <key>akka.javasdk.dev-mode.enabled</key>

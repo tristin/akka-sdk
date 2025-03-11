@@ -13,10 +13,10 @@
 **** xref:operations:projects/container-registries.adoc[]
 ***** xref:operations:projects/external-container-registries.adoc[]
 **** xref:operations:projects/message-brokers.adoc[]
-***** xref:operations:projects/broker-aiven.adoc[Aiven for Kafka]
-***** xref:operations:projects/broker-aws-msk.adoc[AWS MSK Kafka]
-***** xref:operations:projects/broker-confluent.adoc[Confluent Cloud]
 ***** xref:operations:projects/broker-google-pubsub.adoc[Google Pub/Sub]
+***** xref:operations:projects/broker-confluent.adoc[Confluent Cloud]
+***** xref:operations:projects/broker-aws-msk.adoc[AWS MSK Kafka]
+***** xref:operations:projects/broker-aiven.adoc[Aiven for Kafka]
 **** xref:operations:projects/secrets.adoc[]
 
 *** xref:operations:services/index.adoc[]
