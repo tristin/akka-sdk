@@ -167,10 +167,6 @@ private[impl] final class EventSourcedEntityImpl[S, E, ES <: EventSourcedEntity[
             case Left(err) =>
               Future.successful(new SpiEventSourcedEntity.ErrorEffect(err))
             case Right((reply, metadata)) =>
-              val delete =
-                if (deleteEntity) Some(configuration.cleanupDeletedEventSourcedEntityAfter)
-                else None
-
               val serializedEvents = events.map(event => serializer.toBytes(event)).toVector
 
               Future.successful(
@@ -179,7 +175,7 @@ private[impl] final class EventSourcedEntityImpl[S, E, ES <: EventSourcedEntity[
                   updatedState,
                   reply,
                   metadata,
-                  delete))
+                  deleteEntity))
           }
 
         case NoPrimaryEffect =>
