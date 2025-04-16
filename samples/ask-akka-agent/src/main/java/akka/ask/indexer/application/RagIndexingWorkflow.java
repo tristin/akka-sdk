@@ -26,9 +26,9 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
 import java.util.stream.Stream;
+
+import static akka.Done.done;
 
 /**
  * This workflow reads the files under src/main/resources/flat-doc/ and create
@@ -43,11 +43,10 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
   private final OpenAiEmbeddingModel embeddingModel;
   private final MongoDbEmbeddingStore embeddingStore;
   private final DocumentSplitter splitter;
+
   // metadata key used to store file name
   private final String srcKey = "src";
   private static final String PROCESSING_FILE_STEP = "processing-file";
-
-  private final CompletionStage<Done> futDone = CompletableFuture.completedFuture(Done.getInstance());
 
   public record State(List<Path> toProcess, List<Path> processed) { // <1>
 
@@ -127,7 +126,7 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
       return effects()
           .updateState(State.of(documents))
           .transitionTo(PROCESSING_FILE_STEP) // <1>
-          .thenReply(Done.getInstance());
+          .thenReply(done());
     }
   }
   // end::start[]
@@ -138,7 +137,7 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
     return effects()
         .updateState(emptyState())
         .pause()
-        .thenReply(Done.getInstance());
+        .thenReply(done());
   }
 
   // tag::def[]
@@ -146,11 +145,11 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
   public WorkflowDef<State> definition() {
 
     var processing = step(PROCESSING_FILE_STEP) // <1>
-        .asyncCall(() -> {
+        .call(() -> {
           if (currentState().hasFilesToProcess()) {
-            return indexFile(currentState().head());
-          } else
-            return futDone;
+            indexFile(currentState().head().get());
+          }
+          return done();
         })
         .andThen(Done.class, __ -> {
           // we need to check if it hasFilesToProcess, before moving the head
@@ -170,52 +169,35 @@ public class RagIndexingWorkflow extends Workflow<RagIndexingWorkflow.State> {
   // end::def[]
 
   // tag::index[]
-  private CompletionStage<Done> indexFile(Optional<Path> pathOpt) {
+  private void indexFile(Path path) {
+    try (InputStream input = Files.newInputStream(path)) {
+      // read file as input stream
+      Document doc = new TextDocumentParser().parse(input);
+      var docWithMetadata = new DefaultDocument(doc.text(), Metadata.metadata(srcKey, path.getFileName().toString()));
 
-    if (pathOpt.isEmpty())
-      return futDone;
-    else {
+      var segments = splitter.split(docWithMetadata);
+      logger.debug("Created {} segments for document {}", segments.size(), path.getFileName());
 
-      var path = pathOpt.get();
-      try (InputStream input = Files.newInputStream(path)) {
-        // read file as input stream
-        Document doc = new TextDocumentParser().parse(input);
-        var docWithMetadata = new DefaultDocument(doc.text(), Metadata.metadata(srcKey, path.getFileName().toString()));
-
-        var segments = splitter.split(docWithMetadata);
-        logger.debug("Created {} segments for document {}", segments.size(), path.getFileName());
-
-        return segments
-            .stream()
-            .reduce(
-                futDone,
-                (acc, seg) -> addSegment(seg),
-                (stage1, stage2) -> futDone);
-
-      } catch (BlankDocumentException e) {
-        // some documents are blank, we need to skip them
-        return futDone;
-      } catch (Exception e) {
-        logger.error("Error reading file: {} - {}", path, e.getMessage());
-        return futDone;
-      }
+      segments.forEach(this::addSegment);
+    } catch (BlankDocumentException e) {
+      // some documents are blank, we need to skip them
+    } catch (Exception e) {
+      logger.error("Error reading file: {} - {}", path, e.getMessage());
     }
   }
   // end::index[]
 
   // tag::add[]
-  private CompletionStage<Done> addSegment(TextSegment seg) {
+  private void addSegment(TextSegment seg) {
     var fileName = seg.metadata().getString(srcKey);
-    return CompletableFuture.supplyAsync(() -> embeddingModel.embed(seg))
-        .thenCompose(res -> CompletableFuture.supplyAsync(() -> {
-          logger.debug("Segment embedded. Source file '{}'. Tokens usage: in {}, out {}",
-              fileName,
-              res.tokenUsage().inputTokenCount(),
-              res.tokenUsage().outputTokenCount());
+    var res = embeddingModel.embed(seg);
 
-          return embeddingStore.add(res.content(), seg); // <1>
-        }))
-        .thenApply(__ -> Done.getInstance());
+    logger.debug("Segment embedded. Source file '{}'. Tokens usage: in {}, out {}",
+        fileName,
+        res.tokenUsage().inputTokenCount(),
+        res.tokenUsage().outputTokenCount());
+
+    embeddingStore.add(res.content(), seg); // <1>
   }
   // end::add[]
   // tag::shell[]
